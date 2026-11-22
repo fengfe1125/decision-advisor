@@ -1,0 +1,12 @@
+# 将下方域名替换为解析到你 VPS 的真实域名（ChatGPT Developer Mode 强制要求公网 HTTPS）
+# 在 VPS 上安装 Caddy 后将本文件放至 /etc/caddy/Caddyfile，Caddy 会自动申请并续期 Let's Encrypt SSL 证书。
+
+decision.yourdomain.com {
+    # 反向代理到本地端口 8789（来自 Mac 反向 SSH 隧道，或直接运行在 VPS 本机的 uvicorn）
+    reverse_proxy 127.0.0.1:8789 {
+        # 保障 SSE 流式输出不被代理缓冲
+        flush_interval -1
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+}

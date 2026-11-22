@@ -1,0 +1,55 @@
+{
+  "vault_path": "/Users/sakura/Library/Mobile Documents/com~apple~CloudDocs/决策",
+  "access_token": "",
+  "public_base_url": "",
+  "active_provider_id": "deepseek-default",
+  "providers": [
+    {
+      "id": "chatgpt-oauth",
+      "name": "ChatGPT 订阅授权",
+      "kind": "chatgpt_oauth",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "",
+      "model": "gpt-5.4"
+    },
+    {
+      "id": "deepseek-default",
+      "name": "DeepSeek 官方",
+      "kind": "deepseek",
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key": "",
+      "model": "deepseek-v4-pro"
+    },
+    {
+      "id": "openai-relay",
+      "name": "OpenAI 兼容中转站",
+      "kind": "openai_compatible",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "",
+      "model": "gpt-6.2-sol"
+    },
+    {
+      "id": "claude-native",
+      "name": "Claude 原生 API",
+      "kind": "claude",
+      "base_url": "https://api.anthropic.com",
+      "api_key": "",
+      "model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "gemini-native",
+      "name": "Gemini 原生 API",
+      "kind": "gemini",
+      "base_url": "https://generativelanguage.googleapis.com",
+      "api_key": "",
+      "model": "gemini-4-neon"
+    }
+  ],
+  "embedding": {
+    "mode": "local_bge_zh",
+    "local_model": "BAAI/bge-small-zh-v1.5",
+    "api_base_url": "https://api.openai.com/v1",
+    "api_key": "",
+    "api_model": "text-embedding-3-small"
+  }
+}

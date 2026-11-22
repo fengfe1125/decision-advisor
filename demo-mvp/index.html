@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="成长决策顾问" />
+  <meta name="theme-color" content="#FBF9F4" />
+  <link rel="icon" type="image/x-icon" href="./assets/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/favicon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png" />
+  <title>个人成长决策顾问 · 交互式 Demo MVP</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    .demo-mvp-ribbon {
+      background: linear-gradient(90deg, #214e41, #2f6957);
+      color: #f6f4ef;
+      font-size: 12px;
+      padding: 6px 14px;
+      text-align: center;
+      letter-spacing: 0.2px;
+    }
+    .demo-mvp-ribbon strong { color: #ffffff; }
+  </style>
+</head>
+<body>
+  <div class="demo-mvp-ribbon">
+    🧪 <strong>Demo MVP 交互演示版</strong> · 内置脱敏示例记忆，纯浏览器运行（正式使用请打开原生「成长决策顾问.app」或后续手机端）
+  </div>
+  <!-- Auth Overlay -->
+  <div id="authOverlay" class="overlay hidden">
+    <div class="auth-card">
+      <div class="auth-icon">🔐</div>
+      <h2>个人成长记忆库</h2>
+      <p class="muted">已开启访问密码保护，请输入密码后进入。</p>
+      <input id="authInput" type="password" placeholder="输入访问密码" autocomplete="current-password" />
+      <div id="authError" class="error-text hidden"></div>
+      <button id="authSubmitBtn" class="btn btn-primary full-width">解锁进入</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <div class="app-shell">
+    <!-- Desktop Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">
+          <img src="./assets/brand-icon.png" alt="成长决策顾问" class="brand-mark-img" />
+        </div>
+        <div>
+          <div class="brand-title">成长决策顾问 <span class="ver-tag">v0.12</span></div>
+          <div class="brand-sub" id="vaultStatBadge">加载记忆库...</div>
+        </div>
+      </div>
+
+      <nav class="nav-list">
+        <button class="nav-item active" data-tab="chat">
+          <span class="nav-icon">💬</span><span>顾问对话</span>
+        </button>
+        <button class="nav-item" data-tab="memories">
+          <span class="nav-icon">📚</span><span>查看记忆</span>
+        </button>
+        <button class="nav-item" data-tab="inbox">
+          <span class="nav-icon">⚡</span><span>速记收件箱</span>
+        </button>
+        <button class="nav-item" data-tab="settings">
+          <span class="nav-icon">⚙️</span><span>模型与设置</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="themeToggleDesktop" class="btn btn-ghost full-width">🌗 切换深浅色</button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-area">
+      <!-- Mobile Header -->
+      <header class="mobile-header">
+        <div class="mobile-title">
+          <img src="./assets/brand-icon.png" alt="成长决策顾问" class="mobile-brand-img" />
+          <span>成长决策顾问</span>
+          <span class="mobile-stat" id="mobileStatBadge"></span>
+        </div>
+        <button id="themeToggleMobile" class="icon-btn" title="切换深浅色">🌗</button>
+      </header>
+
+      <!-- TAB 1: CHAT (with SQLite Session History + SSE Streaming) -->
+      <section id="tab-chat" class="tab-panel active">
+        <div class="chat-split">
+          <!-- Session History Pane (SQLite) -->
+          <aside class="sessions-pane" id="sessionsPane">
+            <div class="sessions-header">
+              <strong>🕘 历史对话</strong>
+              <div class="row-actions">
+                <button id="newChatBtn" class="btn btn-primary btn-sm">+ 新对话</button>
+                <button id="closeSessionsMobileBtn" class="icon-btn mobile-only">✕</button>
+              </div>
+            </div>
+            <div id="sessionList" class="session-list"></div>
+          </aside>
+
+          <!-- Active Chat Pane -->
+          <div class="chat-main-pane">
+            <div class="chat-toolbar">
+              <div class="mode-pills" id="modePills">
+                <button id="openSessionsMobileBtn" class="btn btn-ghost btn-sm mobile-only">🕘 历史</button>
+                <button class="pill active" data-mode="chat">💬 日常倾诉</button>
+                <button class="pill" data-mode="decision">🧭 9步决策</button>
+                <button class="pill" data-mode="interview">🎙️ 冷启动访谈</button>
+                <button class="pill" data-mode="reflect">🔍 周期反思</button>
+              </div>
+              <div class="chat-controls">
+                <select id="providerSelect" class="select-compact" title="切换云端大模型"></select>
+                <input id="chatAsOfInput" type="date" class="select-compact" title="可选：按历史时间点(as-of)只召回该日期前的记忆" />
+                <label class="sensitive-toggle" title="默认拦截 sensitive 隐私文档，仅本轮勾选才放行">
+                  <input type="checkbox" id="allowSensitiveCheck" />
+                  <span>🔓含敏感</span>
+                </label>
+              </div>
+            </div>
+
+            <div id="chatMessages" class="chat-messages"></div>
+
+            <div class="chat-composer-wrap">
+              <div class="composer-actions-bar">
+                <button id="extractProposalBtn" class="btn btn-accent btn-sm" disabled>
+                  ✨ 提炼记忆提案（半自动确认）
+                </button>
+                <span id="chatStatusHint" class="muted small-text">对话自动存入本地 SQLite 历史表</span>
+              </div>
+              <div class="chat-composer">
+                <textarea id="chatInput" rows="2" placeholder="说说你的经历、感受，或正在纠结的选择...（Enter 换行，Cmd/Ctrl+Enter 发送）"></textarea>
+                <button id="sendBtn" class="btn btn-primary">发送</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: MEMORIES (List / Semantic 4-Way Search / Timeline / Graph) -->
+      <section id="tab-memories" class="tab-panel">
+        <div class="memories-layout">
+          <div class="memories-list-pane" id="memoriesListPane">
+            <div class="filter-bar">
+              <div class="view-mode-pills" id="memoryViewPills">
+                <button class="pill active" data-view="list">📋 列表</button>
+                <button class="pill" data-view="semantic">🧠 语义检索</button>
+                <button class="pill" data-view="timeline">🕰️ 时间轴</button>
+                <button class="pill" data-view="graph">🕸️ 图谱</button>
+              </div>
+
+              <div class="search-row">
+                <input id="memorySearchInput" type="search" placeholder="搜索标题、经历、人物、或自然语言意图..." />
+                <button id="runSemanticBtn" class="btn btn-primary btn-sm hidden">检索</button>
+              </div>
+
+              <div class="filter-row" id="listFiltersRow">
+                <select id="emotionFilter" class="select-compact">
+                  <option value="">全部情绪</option>
+                </select>
+                <label class="sensitive-toggle">
+                  <input type="checkbox" id="highImportanceOnly" />
+                  <span>⭐高显著(≥7)</span>
+                </label>
+                <button id="refreshMemoriesBtn" class="btn btn-ghost btn-sm">刷新</button>
+              </div>
+
+              <div class="filter-row hidden" id="semanticFiltersRow">
+                <label class="small-text muted">回溯截至日期 (as-of)：</label>
+                <input id="searchAsOfInput" type="date" class="select-compact" />
+                <button id="clearAsOfBtn" class="btn btn-ghost btn-sm">清空日期</button>
+              </div>
+
+              <div class="category-pills" id="categoryPills"></div>
+            </div>
+            <div id="memoryCards" class="memory-cards"></div>
+          </div>
+
+          <div class="memory-reader-pane" id="memoryReaderPane">
+            <div class="empty-reader" id="emptyReader">
+              <div class="empty-icon">📖</div>
+              <p>选择左侧任意记忆阅读或编辑</p>
+              <p class="muted small-text">支持 4 路中文语义召回、双时间回溯、情绪卡片与双链跳转</p>
+            </div>
+            <div id="readerContentWrap" class="reader-wrap hidden">
+              <div class="reader-header">
+                <button id="backToListBtn" class="btn btn-ghost btn-sm mobile-only">← 返回</button>
+                <div class="reader-meta-title">
+                  <h2 id="readerTitle"></h2>
+                  <div id="readerBadges" class="badge-row"></div>
+                </div>
+                <div class="reader-actions">
+                  <button id="toggleEditBtn" class="btn btn-ghost btn-sm">✏️ 编辑</button>
+                  <button id="saveEditBtn" class="btn btn-primary btn-sm hidden">💾 保存</button>
+                  <button id="cancelEditBtn" class="btn btn-ghost btn-sm hidden">取消</button>
+                </div>
+              </div>
+              <div id="readerEmotions" class="emotion-detail-grid hidden"></div>
+              <div id="readerRendered" class="markdown-body"></div>
+              <textarea id="readerEditor" class="markdown-editor hidden"></textarea>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: INBOX -->
+      <section id="tab-inbox" class="tab-panel">
+        <div class="narrow-container">
+          <div class="card">
+            <h2>⚡ 10 秒速记收件箱</h2>
+            <p class="muted">当下有情绪波动、灵光一闪或发生小事时先丢进来，之后一键让 AI 帮你整理成正式记忆提案。</p>
+            <div class="mood-chips" id="moodChips">
+              <button class="chip" data-mood="平静">平静</button>
+              <button class="chip" data-mood="开心">开心</button>
+              <button class="chip" data-mood="释然">释然</button>
+              <button class="chip" data-mood="充能">充能</button>
+              <button class="chip" data-mood="焦虑">焦虑</button>
+              <button class="chip" data-mood="委屈">委屈</button>
+              <button class="chip" data-mood="迷茫">迷茫</button>
+              <button class="chip" data-mood="疲惫">疲惫</button>
+            </div>
+            <input id="inboxMoodInput" type="text" placeholder="或输入此刻的情绪词（可选）" />
+            <textarea id="inboxText" rows="5" placeholder="此刻发生了什么？身体和心里是什么感觉？脑子里冒出的第一句话是什么？"></textarea>
+            <div class="row-actions">
+              <button id="saveInboxBtn" class="btn btn-primary">存入收件箱</button>
+              <button id="organizeInboxBtn" class="btn btn-ghost">🔍 去让 AI 整理收件箱</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header-row">
+              <h3>📥 收件箱当前内容</h3>
+              <button id="reloadInboxBtn" class="btn btn-ghost btn-sm">刷新</button>
+            </div>
+            <div id="inboxPreview" class="markdown-body compact-md"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: SETTINGS -->
+      <section id="tab-settings" class="tab-panel">
+        <div class="narrow-container">
+          <!-- Providers -->
+          <div class="card">
+            <div class="card-header-row">
+              <div>
+                <h2>🤖 云端大模型 API 配置</h2>
+                <p class="muted small-text">适配 DeepSeek、任意 OpenAI 兼容中转站、Claude 原生、Gemini 原生。密钥仅存本机 <code>config.local.json</code>，绝不上传 iCloud。</p>
+              </div>
+              <button id="addProviderBtn" class="btn btn-ghost btn-sm">+ 新增预设</button>
+            </div>
+            <div id="providersList" class="providers-list"></div>
+          </div>
+
+          <!-- Chinese Semantic Embedding & Graph Index -->
+          <div class="card">
+            <div class="card-header-row">
+              <div>
+                <h3>🧠 中文语义向量与双时间图谱索引</h3>
+                <p class="muted small-text" id="indexStatusText">加载索引状态中...</p>
+              </div>
+              <button id="rebuildIndexBtn" class="btn btn-accent btn-sm">🔄 立即重建索引</button>
+            </div>
+            <div class="provider-grid">
+              <div class="form-row">
+                <label>向量引擎模式</label>
+                <select id="embModeSelect">
+                  <option value="local_bge_zh">本地离线中文 BGE 向量（推荐 · 免费隐私）</option>
+                  <option value="openai_compatible">OpenAI 兼容 Embedding API</option>
+                  <option value="disabled">关闭向量（仅词法+图谱）</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label>本地中文模型</label>
+                <input id="embLocalModel" type="text" value="BAAI/bge-small-zh-v1.5" />
+              </div>
+              <div class="form-row">
+                <label>云端 Embedding Base URL（选 API 模式时用）</label>
+                <input id="embApiUrl" type="url" placeholder="https://api.openai.com/v1" />
+              </div>
+              <div class="form-row">
+                <label>云端 Embedding 模型</label>
+                <input id="embApiModel" type="text" placeholder="text-embedding-3-small" />
+              </div>
+              <div class="form-row">
+                <label>云端 Embedding API Key</label>
+                <input id="embApiKey" type="password" placeholder="留空不修改" />
+              </div>
+            </div>
+          </div>
+
+          <!-- VPS + Official ChatGPT Plus/Pro Subscription Remote MCP -->
+          <div class="card">
+            <h3>🌐 ChatGPT Plus / Pro 订阅官方接入（VPS Remote MCP + OAuth 2.1）</h3>
+            <p class="muted small-text">
+              通过官方 Developer Mode 远程 MCP 规范，让 <strong>ChatGPT 网页版与官方 iPhone App</strong> 直接消耗你的 ChatGPT 订阅额度来读写本记忆库（完全合规、零封号风险）。详见仓库 <code>deploy/VPS-ChatGPT订阅接入指南.md</code>。
+            </p>
+            <div class="form-row">
+              <label for="publicBaseUrlInput">你的 VPS 公网 HTTPS 域名（如 <code>https://decision.yourdomain.com</code>）</label>
+              <input id="publicBaseUrlInput" type="url" placeholder="https://decision.yourdomain.com" />
+            </div>
+            <div id="mcpEndpointBox" class="network-box"></div>
+          </div>
+
+          <!-- Phone Access & Password -->
+          <div class="card">
+            <h3>📱 手机访问与安全保护</h3>
+            <div id="networkInfo" class="network-box"></div>
+            <div class="form-row">
+              <label for="accessTokenInput">访问密码（手机访问 & ChatGPT OAuth 授权页通用，公网暴露前务必设置）</label>
+              <div class="inline-input">
+                <input id="accessTokenInput" type="password" placeholder="留空表示不修改现有密码" />
+                <button id="clearAccessTokenBtn" class="btn btn-ghost btn-sm">清除密码</button>
+              </div>
+              <div id="accessTokenState" class="muted small-text"></div>
+            </div>
+            <div class="row-actions">
+              <button id="saveConfigBtn" class="btn btn-primary">💾 保存全部设置</button>
+            </div>
+          </div>
+
+          <!-- Git Snapshots -->
+          <div class="card">
+            <div class="card-header-row">
+              <h3>🕒 外置 Git 自动版本快照</h3>
+              <button id="reloadGitBtn" class="btn btn-ghost btn-sm">刷新</button>
+            </div>
+            <p class="muted small-text">Git 元数据与 SQLite 历史表均独立保存在 Mac 本机，绝不污染 iCloud。</p>
+            <div id="gitHistoryList" class="git-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mobile Bottom Nav -->
+      <nav class="mobile-nav">
+        <button class="mobile-nav-item active" data-tab="chat">
+          <span>💬</span><small>对话</small>
+        </button>
+        <button class="mobile-nav-item" data-tab="memories">
+          <span>📚</span><small>记忆</small>
+        </button>
+        <button class="mobile-nav-item" data-tab="inbox">
+          <span>⚡</span><small>速记</small>
+        </button>
+        <button class="mobile-nav-item" data-tab="settings">
+          <span>⚙️</span><small>设置</small>
+        </button>
+      </nav>
+    </main>
+  </div>
+
+  <!-- Semi-Auto Confirmation Modal -->
+  <div id="proposalModal" class="overlay hidden">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div>
+          <h3>✨ 半自动记忆写入确认</h3>
+          <p class="muted small-text">请勾选确认要写入 iCloud 记忆库的条目；Level 3 核心自我修改附带 Diff 对照。</p>
+        </div>
+        <button id="closeProposalBtn" class="icon-btn">✕</button>
+      </div>
+      <div id="proposalList" class="proposal-list"></div>
+      <div class="modal-footer">
+        <button id="cancelProposalBtn" class="btn btn-ghost">先不写入</button>
+        <button id="commitProposalBtn" class="btn btn-primary">✅ 确认写入已选记忆</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./demo-mock.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

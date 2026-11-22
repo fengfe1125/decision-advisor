@@ -1,0 +1,21 @@
+[Unit]
+Description=Personal Growth Decision Advisor Remote Backend (API + MCP)
+After=network.target caddy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/decision-advisor
+Environment=ADVISOR_DEPLOYMENT_MODE=remote_vps
+Environment=ADVISOR_DATA_DIR=/opt/decision-advisor/data
+Environment=DECISION_VAULT_PATH=/opt/decision-advisor/data/vault
+Environment=ADVISOR_PORT=8789
+Environment=FASTEMBED_CACHE_PATH=/opt/decision-advisor/data/fastembed_cache
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/decision-advisor/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8789 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=3
+MemoryMax=1400M
+
+[Install]
+WantedBy=multi-user.target

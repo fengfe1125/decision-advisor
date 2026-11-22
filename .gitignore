@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+config.local.json
+chatgpt_oauth.local.json
+.memory-git/
+advisor_state.db*
+logs/
+macos/.build/
+macos/dist/
+*.log
+.DS_Store
