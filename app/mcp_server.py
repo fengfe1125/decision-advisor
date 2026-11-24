@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import html
 import json
+import re
 from typing import Any
 from urllib.parse import urlencode
 
@@ -15,17 +16,20 @@ from .config import load_config
 from .db import (
     consume_oauth_code,
     create_oauth_code,
+    get_conn,
+    get_oauth_token_scopes,
     issue_oauth_token,
+    oauth_redirect_is_registered,
     register_oauth_client,
-    validate_oauth_token,
 )
 from .git_backup import create_snapshot, trigger_basic_memory_reindex
-from .memory_store import MemoryStore
+from .memory_store import MemoryStore, strip_private_blocks
 from .search_index import get_timeline, hybrid_search, sync_vault_index
 
 router = APIRouter()
 
 MCP_PROTOCOL_VERSION = "2025-03-26"
+CHAT_HISTORY_SCOPE = "chat_history"
 
 MCP_TOOLS: list[dict[str, Any]] = [
     {
@@ -135,6 +139,52 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+CHAT_TOOLS = [
+    {
+        "name": "list_chat_sessions",
+        "description": "按最近更新时间列出 VPS 上的顾问会话（含手机与 Mac 端），返回会话 ID、标题、消息数和时间。可用 before 继续翻页。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "before": {"type": "string", "description": "上一页返回的 next_before，用于继续翻页"},
+                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 50},
+            },
+            "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    {
+        "name": "search_chat_history",
+        "description": "按原文检索 VPS 上已保存的顾问对话。返回会话 ID、消息 ID 和匹配片段。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                "limit": {"type": "integer", "default": 8, "minimum": 1, "maximum": 20},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    {
+        "name": "get_chat_messages",
+        "description": "用会话 ID 读取一页对话原文。用 next_after_id 继续读取下一页。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "minLength": 1},
+                "after_id": {"type": "integer", "default": 0, "minimum": 0},
+                "limit": {"type": "integer", "default": 12, "minimum": 1, "maximum": 20},
+            },
+            "required": ["session_id"],
+            "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+]
+CHAT_TOOL_NAMES = {tool["name"] for tool in CHAT_TOOLS}
+
 
 def _resolve_base_url(request: Request) -> str:
     cfg = load_config()
@@ -145,17 +195,17 @@ def _resolve_base_url(request: Request) -> str:
     return f"{proto}://{host}".rstrip("/")
 
 
-def _verify_mcp_bearer(request: Request) -> bool:
+def _mcp_scopes(request: Request) -> set[str]:
     cfg = load_config()
     if not cfg.access_token:
-        return True
+        return {"mcp"}
     auth = request.headers.get("authorization") or ""
     token = auth[7:].strip() if auth.lower().startswith("bearer ") else (request.headers.get("x-access-token") or "").strip()
     if not token:
-        return False
+        return set()
     if hmac.compare_digest(token, cfg.access_token):
-        return True
-    return validate_oauth_token(token)
+        return {"mcp", CHAT_HISTORY_SCOPE}
+    return get_oauth_token_scopes(token)
 
 
 # ---------- OAuth 2.1 Discovery & PKCE Endpoints (Official ChatGPT Developer Mode Spec) ----------
@@ -168,7 +218,7 @@ def oauth_protected_resource(request: Request) -> dict[str, Any]:
     return {
         "resource": f"{base}/mcp",
         "authorization_servers": [base],
-        "scopes_supported": ["mcp"],
+        "scopes_supported": ["mcp", CHAT_HISTORY_SCOPE],
         "bearer_methods_supported": ["header"],
     }
 
@@ -186,7 +236,7 @@ def oauth_authorization_server(request: Request) -> dict[str, Any]:
         "grant_types_supported": ["authorization_code"],
         "token_endpoint_auth_methods_supported": ["none"],
         "code_challenge_methods_supported": ["S256", "plain"],
-        "scopes_supported": ["mcp"],
+        "scopes_supported": ["mcp", CHAT_HISTORY_SCOPE],
     }
 
 
@@ -213,6 +263,8 @@ def oauth_authorize_form(
 ) -> HTMLResponse:
     if response_type != "code":
         raise HTTPException(status_code=400, detail="Unsupported response_type")
+    if not oauth_redirect_is_registered(client_id, redirect_uri):
+        raise HTTPException(status_code=400, detail="未注册的客户端或回调地址")
     page = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -238,6 +290,8 @@ def oauth_authorize_form(
     <input type="hidden" name="code_challenge" value="{html.escape(code_challenge)}" />
     <input type="hidden" name="code_challenge_method" value="{html.escape(code_challenge_method)}" />
     <input type="hidden" name="scope" value="{html.escape(scope)}" />
+    <p><label><input type="checkbox" name="allow_chat_history" value="true" style="width:auto" />
+        一并允许此 AI 读取已保存的聊天原文</label></p>
     <input type="password" name="password" placeholder="输入你在设置页配置的访问密码" required autofocus />
     <button type="submit">确认授权连接</button>
   </form>
@@ -255,10 +309,20 @@ def oauth_authorize_submit(
     code_challenge: str = Form(""),
     code_challenge_method: str = Form("S256"),
     scope: str = Form("mcp"),
+    allow_chat_history: bool = Form(False),
 ) -> Response:
     cfg = load_config()
     if cfg.access_token and not hmac.compare_digest(password.strip(), cfg.access_token):
         return HTMLResponse("<h3>访问密码错误，请返回重试。</h3>", status_code=403)
+    if not oauth_redirect_is_registered(client_id, redirect_uri):
+        raise HTTPException(status_code=400, detail="未注册的客户端或回调地址")
+    if allow_chat_history and (
+        not cfg.access_token
+        or code_challenge_method != "S256"
+        or not re.fullmatch(r"[A-Za-z0-9_-]{43}", code_challenge)
+    ):
+        raise HTTPException(status_code=400, detail="聊天原文授权需要访问密码和 S256 PKCE")
+    scope = f"mcp {CHAT_HISTORY_SCOPE}" if allow_chat_history else "mcp"
     code = create_oauth_code(client_id, redirect_uri, code_challenge, code_challenge_method, scope)
     params = {"code": code}
     if state:
@@ -285,6 +349,8 @@ async def oauth_token(request: Request) -> JSONResponse:
     record = consume_oauth_code(code)
     if not record:
         return JSONResponse(status_code=400, content={"error": "invalid_grant", "error_description": "授权码无效或已过期"})
+    if any(data.get(key) and data[key] != record[key] for key in ("client_id", "redirect_uri")):
+        return JSONResponse(status_code=400, content={"error": "invalid_grant"})
 
     if record["code_challenge"]:
         method = (record["code_challenge_method"] or "S256").upper()
@@ -307,6 +373,85 @@ async def oauth_token(request: Request) -> JSONResponse:
 
 
 # ---------- MCP Streamable HTTP Endpoint (POST /mcp) ----------
+
+def _visible_chat_text(value: str) -> str:
+    text = strip_private_blocks(value)
+    return re.split(r"<private>", text, maxsplit=1, flags=re.IGNORECASE)[0]
+
+
+def _read_chat_history(name: str, args: dict[str, Any]) -> str:
+    if name == "list_chat_sessions":
+        limit = max(1, min(50, int(args.get("limit") or 20)))
+        before = str(args.get("before") or "").strip()
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT s.id, s.title, s.mode, s.created_at, s.updated_at, COUNT(m.id) AS message_count
+                FROM sessions s
+                LEFT JOIN messages m ON m.session_id = s.id AND m.role IN ('user', 'assistant')
+                WHERE (? = '' OR s.updated_at < ?)
+                GROUP BY s.id
+                ORDER BY s.updated_at DESC
+                LIMIT ?
+                """,
+                (before, before, limit + 1),
+            ).fetchall()
+        items = [dict(row) for row in rows[:limit]]
+        for item in items:
+            item["title"] = _visible_chat_text(item["title"]).strip() or "未命名对话"
+        return json.dumps(
+            {"items": items, "next_before": items[-1]["updated_at"] if len(rows) > limit else None},
+            ensure_ascii=False,
+        )
+
+    limit = max(1, min(20, int(args.get("limit") or (8 if name == "search_chat_history" else 12))))
+    with get_conn() as conn:
+        if name == "search_chat_history":
+            query = str(args.get("query") or "").strip()
+            if not 1 <= len(query) <= 200:
+                raise ValueError("请输入 1 到 200 个字符")
+            conn.create_function("visible_chat_text", 1, _visible_chat_text)
+            rows = conn.execute(
+                """
+                SELECT id, session_id, role, created_at,
+                       SUBSTR(text, MAX(1, INSTR(LOWER(text), LOWER(?)) - 100), 420) AS snippet
+                FROM (
+                    SELECT id, session_id, role, created_at, visible_chat_text(content) AS text
+                    FROM messages WHERE role IN ('user', 'assistant')
+                )
+                WHERE INSTR(LOWER(text), LOWER(?)) > 0
+                ORDER BY id DESC LIMIT ?
+                """,
+                (query, query, limit),
+            ).fetchall()
+            result = {"items": [dict(row) for row in rows]}
+        else:
+            session_id = str(args.get("session_id") or "").strip()
+            if not session_id:
+                raise ValueError("缺少会话 ID")
+            after_id = max(0, int(args.get("after_id") or 0))
+            rows = conn.execute(
+                """
+                SELECT id, role, created_at, content
+                FROM messages
+                WHERE session_id = ? AND id > ? AND role IN ('user', 'assistant')
+                ORDER BY id LIMIT ?
+                """,
+                (session_id, after_id, limit + 1),
+            ).fetchall()
+            items = []
+            for row in rows[:limit]:
+                item = dict(row)
+                visible = _visible_chat_text(item["content"])
+                item["content"] = visible[:2400]
+                item["truncated"] = len(visible) > 2400
+                items.append(item)
+            result = {
+                "session_id": session_id,
+                "items": items,
+                "next_after_id": items[-1]["id"] if len(rows) > limit else None,
+            }
+    return json.dumps(result, ensure_ascii=False)
 
 
 def _execute_mcp_tool(name: str, args: dict[str, Any]) -> str:
@@ -390,7 +535,8 @@ def _execute_mcp_tool(name: str, args: dict[str, Any]) -> str:
 
 @router.post("/mcp")
 async def mcp_endpoint(request: Request) -> Response:
-    if not _verify_mcp_bearer(request):
+    scopes = _mcp_scopes(request)
+    if "mcp" not in scopes:
         base = _resolve_base_url(request)
         return JSONResponse(
             status_code=401,
@@ -432,13 +578,19 @@ async def mcp_endpoint(request: Request) -> Response:
         return JSONResponse(content={"jsonrpc": "2.0", "id": req_id, "result": {}})
 
     if method == "tools/list":
-        return JSONResponse(content={"jsonrpc": "2.0", "id": req_id, "result": {"tools": MCP_TOOLS}})
+        tools = MCP_TOOLS + CHAT_TOOLS if CHAT_HISTORY_SCOPE in scopes else MCP_TOOLS
+        return JSONResponse(content={"jsonrpc": "2.0", "id": req_id, "result": {"tools": tools}})
 
     if method == "tools/call":
         tool_name = str(params.get("name") or "")
         tool_args = params.get("arguments") or {}
         try:
-            text = _execute_mcp_tool(tool_name, tool_args)
+            if tool_name in CHAT_TOOL_NAMES:
+                if CHAT_HISTORY_SCOPE not in scopes:
+                    raise PermissionError("此连接未获聊天原文读取授权")
+                text = _read_chat_history(tool_name, tool_args)
+            else:
+                text = _execute_mcp_tool(tool_name, tool_args)
             return JSONResponse(
                 content={
                     "jsonrpc": "2.0",

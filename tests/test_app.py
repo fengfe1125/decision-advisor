@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import AppConfig, EmbeddingConfig, ProviderPreset, save_config
-from app.db import init_db
+from app.db import append_message, create_session, init_db
 from app.main import app
 from app.memory_store import MemoryStore, strip_private_blocks
 from app.prompts import parse_proposals_json
@@ -346,6 +346,119 @@ def test_oauth21_pkce_and_chatgpt_remote_mcp(temp_env):
     assert save_call["result"]["isError"] is False
     assert (temp_env["vault"] / "02-经历与感受/2026/2026-11-21-来自ChatGPT记忆.md").exists()
     assert not (temp_env["vault"] / ".git").exists()
+
+
+def test_mobile_outbox_replays_are_idempotent(temp_env, monkeypatch: pytest.MonkeyPatch):
+    calls = []
+
+    async def fake_stream_llm(*args, **kwargs):
+        calls.append(1)
+        yield {"type": "text", "delta": "离线补传收到"}
+
+    monkeypatch.setattr("app.main.stream_llm", fake_stream_llm)
+    client = TestClient(app)
+
+    def stream(body):
+        with client.stream("POST", "/api/chat/stream", json=body) as resp:
+            assert resp.status_code == 200
+            return [json.loads(line[5:]) for line in resp.iter_lines() if line.startswith("data:")]
+
+    body = {"messages": [{"role": "user", "content": "地铁里写的一句话"}], "client_id": "turn-1"}
+    first = stream(body)
+    sid = first[0]["session_id"]
+    # Replaying without the session id (phone never saw `meta`) lands in the same session with no new LLM call.
+    second = stream(body)
+    assert second[0]["session_id"] == sid
+    assert any(e["type"] == "text" and e["delta"] == "离线补传收到" for e in second)
+    assert len(calls) == 1
+    assert [m["role"] for m in client.get(f"/api/sessions/{sid}").json()["messages"]] == ["user", "assistant"]
+
+    # A turn whose reply never got saved is answered on replay, without duplicating the user message.
+    from app.db import claim_chat_turn
+
+    claim_chat_turn("turn-2", sid, "断网前发出的")
+    stream({"session_id": sid, "messages": [{"role": "user", "content": "断网前发出的"}], "client_id": "turn-2"})
+    assert len(calls) == 2
+    roles = [m["role"] for m in client.get(f"/api/sessions/{sid}").json()["messages"]]
+    assert roles == ["user", "assistant", "user", "assistant"]
+
+    for _ in range(2):
+        assert client.post("/api/inbox", json={"text": "排队的速记", "client_id": "note-1"}).json()["ok"]
+    assert (temp_env["vault"] / "99-收件箱/inbox.md").read_text(encoding="utf-8").count("排队的速记") == 1
+
+    memory = {"path": "03-重要关系/小林.md", "content": "# 小林\n手机新建", "create_only": True}
+    assert client.put("/api/memories/file", json=memory).status_code == 200
+    assert client.put("/api/memories/file", json=memory).json()["duplicate"] is True
+    assert client.put("/api/memories/file", json={**memory, "content": "# 小林\n别的"}).status_code == 409
+
+
+def test_chat_history_requires_separate_mcp_consent(temp_env):
+    client = TestClient(app)
+    password = "test-advisor-access"
+    assert client.put("/api/config", json={"access_token": password}).status_code == 200
+    session_id = create_session()["id"]
+    append_message(session_id, "user", "手机同步测试 <private>保护内容</private>")
+    append_message(session_id, "assistant", "收到", reasoning="内部思考")
+    redirect_uri = "https://example.net/callback"
+    registration = client.post("/oauth/register", json={"redirect_uris": [redirect_uri]}).json()
+    verifier = "test-verifier-for-chat-history-oauth-client-213"
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+
+    def authorize(consent: bool) -> str:
+        response = client.post(
+            "/oauth/authorize",
+            data={
+                "client_id": registration["client_id"],
+                "redirect_uri": redirect_uri,
+                "password": password,
+                "code_challenge": challenge,
+                "scope": "mcp chat_history",
+                "allow_chat_history": str(consent).lower(),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
+        result = client.post("/oauth/token", data={
+            "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
+        })
+        assert result.status_code == 200
+        return result.json()["access_token"]
+
+    def mcp(token: str, method: str, **params):
+        response = client.post("/mcp", headers={"Authorization": f"Bearer {token}"}, json={
+            "jsonrpc": "2.0", "id": 1, "method": method, "params": params,
+        })
+        assert response.status_code == 200
+        return response.json()["result"]
+
+    ordinary = authorize(False)
+    ordinary_tools = {tool["name"] for tool in mcp(ordinary, "tools/list")["tools"]}
+    assert not ordinary_tools & {"list_chat_sessions", "search_chat_history", "get_chat_messages"}
+    assert mcp(ordinary, "tools/call", name="list_chat_sessions", arguments={})["isError"]
+    assert mcp(ordinary, "tools/call", name="get_chat_messages", arguments={"session_id": session_id})["isError"]
+    assert client.get(f"/api/sessions/{session_id}", headers={"Authorization": f"Bearer {ordinary}"}).status_code == 401
+
+    authorized = authorize(True)
+    assert "search_chat_history" in {tool["name"] for tool in mcp(authorized, "tools/list")["tools"]}
+
+    def read(name: str, **args):
+        result = mcp(authorized, "tools/call", name=name, arguments=args)
+        assert not result["isError"]
+        return json.loads(result["content"][0]["text"])
+
+    sessions = read("list_chat_sessions")
+    assert sessions["items"][0]["id"] == session_id
+    assert sessions["items"][0]["message_count"] == 2
+    assert sessions["next_before"] is None
+    assert read("search_chat_history", query="手机同步")["items"][0]["session_id"] == session_id
+    assert read("search_chat_history", query="保护内容")["items"] == []
+    first_page = read("get_chat_messages", session_id=session_id, limit=1)
+    assert "保护内容" not in first_page["items"][0]["content"]
+    second_page = read("get_chat_messages", session_id=session_id, after_id=first_page["next_after_id"])
+    assert second_page["items"][0]["content"] == "收到"
+    assert "reasoning" not in second_page["items"][0]
+    assert client.get(f"/api/sessions/{session_id}", headers={"Authorization": f"Bearer {authorized}"}).status_code == 401
 
 
 def test_timeline_graph_and_path_traversal(temp_env):

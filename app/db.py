@@ -73,6 +73,14 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
 
+            CREATE TABLE IF NOT EXISTS client_ops (
+                client_id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                session_id TEXT,
+                message_id INTEGER,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS proposals_log (
                 id TEXT PRIMARY KEY,
                 session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
@@ -370,12 +378,90 @@ def issue_oauth_token(client_id: str, scope: str = "mcp", ttl_seconds: int = 864
     return raw_token, ttl_seconds
 
 
-def validate_oauth_token(raw_token: str) -> bool:
+def get_oauth_token_scopes(raw_token: str) -> set[str]:
     if not raw_token:
-        return False
+        return set()
     h = hash_token(raw_token)
     with get_conn() as conn:
-        row = conn.execute("SELECT expires_at FROM oauth_tokens WHERE token_hash = ?", (h,)).fetchone()
-    if not row:
-        return False
-    return float(row["expires_at"]) > time.time()
+        row = conn.execute("SELECT scope, expires_at FROM oauth_tokens WHERE token_hash = ?", (h,)).fetchone()
+    if not row or float(row["expires_at"]) <= time.time():
+        return set()
+    return set(row["scope"].split())
+
+
+def oauth_redirect_is_registered(client_id: str, redirect_uri: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT redirect_uris_json FROM oauth_clients WHERE client_id = ?", (client_id,)
+        ).fetchone()
+    return bool(row and redirect_uri in json.loads(row["redirect_uris_json"]))
+
+
+# ---------- Idempotent client operations (offline outbox replays from mobile) ----------
+
+
+def claim_client_op(client_id: str, kind: str) -> bool:
+    """Record a one-shot client operation. Returns False when it was already applied."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO client_ops (client_id, kind, created_at) VALUES (?, ?, ?)",
+            (client_id, kind, _now_iso()),
+        )
+        return cur.rowcount == 1
+
+
+def release_client_op(client_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM client_ops WHERE client_id = ?", (client_id,))
+
+
+def claim_chat_turn(client_id: str, session_id: str, content: str) -> tuple[str, int, bool]:
+    """Append the user turn once per client_id. Replays get the original session and message."""
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT session_id, message_id FROM client_ops WHERE client_id = ? AND kind = 'chat'",
+            (client_id,),
+        ).fetchone()
+        if row and row["session_id"]:
+            exists = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (row["session_id"],)).fetchone()
+            if exists:
+                return row["session_id"], int(row["message_id"]), False
+        now = _now_iso()
+        cur = conn.execute(
+            """
+            INSERT INTO messages (session_id, role, content, reasoning, model, provider_name, references_json, created_at)
+            VALUES (?, 'user', ?, '', '', '', '[]', ?)
+            """,
+            (session_id, content, now),
+        )
+        conn.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id))
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO client_ops (client_id, kind, session_id, message_id, created_at)
+            VALUES (?, 'chat', ?, ?, ?)
+            """,
+            (client_id, session_id, cur.lastrowid, now),
+        )
+        return session_id, int(cur.lastrowid), True
+
+
+def client_chat_session(client_id: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT c.session_id FROM client_ops c JOIN sessions s ON s.id = c.session_id
+            WHERE c.client_id = ? AND c.kind = 'chat'
+            """,
+            (client_id,),
+        ).fetchone()
+    return row["session_id"] if row else None
+
+
+def reply_after(session_id: str, message_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM messages WHERE session_id = ? AND id > ? ORDER BY id LIMIT 1",
+            (session_id, message_id),
+        ).fetchone()
+    return dict(row) if row and row["role"] == "assistant" else None

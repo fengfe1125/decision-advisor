@@ -35,14 +35,18 @@ from .config import (
 )
 from .db import (
     append_message,
+    claim_chat_turn,
+    claim_client_op,
+    client_chat_session,
     create_session,
     delete_session,
     get_session,
     init_db,
     list_sessions,
     log_proposals,
+    release_client_op,
+    reply_after,
     update_session,
-    validate_oauth_token,
 )
 from .git_backup import create_snapshot, list_snapshots, trigger_basic_memory_reindex
 from .mcp_server import router as mcp_router
@@ -105,7 +109,7 @@ def require_auth(
     provided = _extract_token(authorization, x_access_token)
     if not provided:
         raise HTTPException(status_code=401, detail="访问密码无效或未提供")
-    if hmac.compare_digest(provided, cfg.access_token) or validate_oauth_token(provided):
+    if hmac.compare_digest(provided, cfg.access_token):
         return
     raise HTTPException(status_code=401, detail="访问密码无效或未提供")
 
@@ -158,6 +162,7 @@ class ChatRequest(BaseModel):
     allow_sensitive: bool = False
     session_id: str | None = None
     as_of: str | None = None
+    client_id: str | None = Field(default=None, max_length=80)
 
 
 class ExtractRequest(BaseModel):
@@ -185,11 +190,13 @@ class SaveFileRequest(BaseModel):
     path: str
     content: str
     commit_message: str | None = None
+    create_only: bool = False
 
 
 class InboxRequest(BaseModel):
     text: str = Field(min_length=1)
     mood: str = ""
+    client_id: str | None = Field(default=None, max_length=80)
 
 
 class TestProviderRequest(BaseModel):
@@ -225,7 +232,7 @@ def auth_status(
     if not cfg.access_token:
         return {"auth_required": False, "authenticated": True, "deployment_mode": mode, "version": APP_VERSION}
     provided = _extract_token(authorization, x_access_token)
-    ok = bool(provided) and (hmac.compare_digest(provided, cfg.access_token) or validate_oauth_token(provided))
+    ok = bool(provided) and hmac.compare_digest(provided, cfg.access_token)
     return {"auth_required": True, "authenticated": ok, "deployment_mode": mode, "version": APP_VERSION}
 
 
@@ -416,6 +423,15 @@ def save_memory_file(req: SaveFileRequest) -> dict[str, Any]:
     init_db()
     store = _get_store()
     try:
+        if req.create_only:
+            target = store.resolve_safe_path(req.path)
+            if target.exists():
+                existing = target.read_text(encoding="utf-8")
+                wanted = req.content if req.content.endswith("\n") else req.content + "\n"
+                if existing == wanted:
+                    rel = target.relative_to(store.vault_path).as_posix()
+                    return {"ok": True, "path": rel, "snapshot": None, "duplicate": True}
+                raise HTTPException(status_code=409, detail="同名记忆已存在，请换个标题")
         saved_rel = store.write_doc(req.path, req.content, action="update")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -456,7 +472,14 @@ def export_vault_archive() -> Response:
 def add_inbox_note(req: InboxRequest) -> dict[str, Any]:
     init_db()
     store = _get_store()
-    saved_rel = store.append_inbox(req.text, req.mood)
+    if req.client_id and not claim_client_op(req.client_id, "inbox"):
+        return {"ok": True, "path": "99-收件箱/inbox.md", "snapshot": None, "duplicate": True}
+    try:
+        saved_rel = store.append_inbox(req.text, req.mood)
+    except Exception:
+        if req.client_id:
+            release_client_op(req.client_id)
+        raise
     snap = create_snapshot(store.vault_path, "inbox: 速记追加")
     sync_vault_index(store)
     trigger_basic_memory_reindex()
@@ -517,7 +540,7 @@ def _prepare_chat_context(req: ChatRequest):
     ]
 
     # Ensure or create SQLite session and persist latest user turn
-    session_id = req.session_id
+    session_id = (client_chat_session(req.client_id) if req.client_id else None) or req.session_id
     latest_user = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
     if not session_id or not get_session(session_id):
         sess = create_session(title=_auto_title(latest_user), mode=req.mode, provider_id=provider.id)
@@ -529,16 +552,32 @@ def _prepare_chat_context(req: ChatRequest):
         else:
             update_session(session_id, mode=req.mode, provider_id=provider.id)
 
-    if latest_user:
+    prior_reply = None
+    if req.client_id and latest_user:
+        session_id, user_message_id, fresh = claim_chat_turn(req.client_id, session_id, latest_user)
+        if not fresh:
+            prior_reply = reply_after(session_id, user_message_id)
+    elif latest_user:
         append_message(session_id, "user", latest_user)
 
     msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages[-20:]]
-    return provider, system_prompt, msg_dicts, references, session_id
+    return provider, system_prompt, msg_dicts, references, session_id, prior_reply
 
 
 @app.post("/api/chat", dependencies=[Depends(require_auth)])
 async def chat_with_advisor(req: ChatRequest) -> dict[str, Any]:
-    provider, system_prompt, msg_dicts, references, session_id = _prepare_chat_context(req)
+    provider, system_prompt, msg_dicts, references, session_id, prior_reply = _prepare_chat_context(req)
+    if prior_reply:
+        return {
+            "session_id": session_id,
+            "reply": prior_reply["content"],
+            "reasoning": prior_reply["reasoning"],
+            "model": prior_reply["model"],
+            "provider_id": provider.id,
+            "provider_name": prior_reply["provider_name"],
+            "references": json.loads(prior_reply["references_json"] or "[]"),
+            "replayed": True,
+        }
     try:
         result = await call_llm(provider, system_prompt, msg_dicts)
     except ProviderError as exc:
@@ -567,7 +606,7 @@ async def chat_with_advisor(req: ChatRequest) -> dict[str, Any]:
 
 @app.post("/api/chat/stream", dependencies=[Depends(require_auth)])
 async def chat_stream_with_advisor(req: ChatRequest) -> StreamingResponse:
-    provider, system_prompt, msg_dicts, references, session_id = _prepare_chat_context(req)
+    provider, system_prompt, msg_dicts, references, session_id, prior_reply = _prepare_chat_context(req)
 
     async def event_generator():
         meta = {
@@ -579,6 +618,11 @@ async def chat_stream_with_advisor(req: ChatRequest) -> StreamingResponse:
             "references": references,
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        if prior_reply:
+            replay = {"type": "text", "delta": prior_reply["content"], "replayed": True}
+            yield f"data: {json.dumps(replay, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+            return
 
         full_text: list[str] = []
         full_reasoning: list[str] = []
