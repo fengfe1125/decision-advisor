@@ -55,7 +55,7 @@
 #### 第 3 步：在 Mac 启动反向 SSH 隧道
 确保本机 `./start.sh` 已在运行，然后新开终端执行：
 ```bash
-cd /Volumes/Developer/个人汇总/decision-advisor
+cd /Volumes/Developer/个人汇总/apps/decision-advisor
 ./deploy/vps-tunnel-mac.sh
 ```
 *(脚本已默认指向 `murmur-new-vps`，可配合 `autossh` 断线自动重连；所有记忆与 SQLite 物理留在你的 Mac，不落云服务器硬盘。)*

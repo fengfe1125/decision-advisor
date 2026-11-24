@@ -52,7 +52,7 @@ final class APIClient: Sendable {
             .appendingPathComponent("DecisionAdvisor/local-data/config.local.json")
         let candidates: [URL] = [
             appSupport,
-            URL(fileURLWithPath: "/Volumes/Developer/个人汇总/decision-advisor/config.local.json"),
+            URL(fileURLWithPath: "/Volumes/Developer/个人汇总/apps/decision-advisor/config.local.json"),
         ].compactMap { $0 }
 
         for url in candidates {

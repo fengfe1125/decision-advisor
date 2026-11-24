@@ -46,7 +46,7 @@ final class EmbeddedBackendManager {
                 return bundled
             }
         }
-        let workspaceFallback = URL(fileURLWithPath: "/Volumes/Developer/个人汇总/decision-advisor", isDirectory: true)
+        let workspaceFallback = URL(fileURLWithPath: "/Volumes/Developer/个人汇总/apps/decision-advisor", isDirectory: true)
         if fm.fileExists(atPath: workspaceFallback.appendingPathComponent("app/main.py").path) {
             return workspaceFallback
         }
@@ -59,7 +59,7 @@ final class EmbeddedBackendManager {
         let dataDir = localDataDirectory
         try fm.createDirectory(at: dataDir, withIntermediateDirectories: true)
 
-        let legacyBase = URL(fileURLWithPath: "/Volumes/Developer/个人汇总/decision-advisor", isDirectory: true)
+        let legacyBase = URL(fileURLWithPath: "/Volumes/Developer/个人汇总/apps/decision-advisor", isDirectory: true)
         let cfgDst = dataDir.appendingPathComponent("config.local.json")
         let cfgSrc = legacyBase.appendingPathComponent("config.local.json")
         if !fm.fileExists(atPath: cfgDst.path), fm.fileExists(atPath: cfgSrc.path) {
@@ -84,7 +84,7 @@ final class EmbeddedBackendManager {
     func readEmbeddedAccessToken() -> String {
         let candidates = [
             localDataDirectory.appendingPathComponent("config.local.json"),
-            URL(fileURLWithPath: "/Volumes/Developer/个人汇总/decision-advisor/config.local.json"),
+            URL(fileURLWithPath: "/Volumes/Developer/个人汇总/apps/decision-advisor/config.local.json"),
         ]
         for url in candidates {
             if let data = try? Data(contentsOf: url),
@@ -101,7 +101,7 @@ final class EmbeddedBackendManager {
         let candidates = [
             backendDir.appendingPathComponent(".venv/bin/python"),
             runtimeDirectory.appendingPathComponent(".venv/bin/python"),
-            URL(fileURLWithPath: "/Volumes/Developer/个人汇总/decision-advisor/.venv/bin/python"),
+            URL(fileURLWithPath: "/Volumes/Developer/个人汇总/apps/decision-advisor/.venv/bin/python"),
         ]
         for url in candidates {
             if fm.isExecutableFile(atPath: url.path) {
