@@ -25,6 +25,7 @@ from .chatgpt_oauth import (
     start_chatgpt_oauth_flow,
 )
 from .config import (
+    APP_VERSION,
     ProviderPreset,
     ensure_chatgpt_oauth_provider,
     get_deployment_mode,
@@ -61,7 +62,6 @@ from .search_index import (
     sync_vault_index,
 )
 
-APP_VERSION = "0.12"
 API_CAPABILITIES = [
     "chat_stream",
     "hybrid_search",

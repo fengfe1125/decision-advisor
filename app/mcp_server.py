@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .config import load_config
+from .config import APP_VERSION, load_config
 from .db import (
     consume_oauth_code,
     create_oauth_code,
@@ -569,7 +569,7 @@ async def mcp_endpoint(request: Request) -> Response:
                 "result": {
                     "protocolVersion": MCP_PROTOCOL_VERSION,
                     "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": "decision-advisor-mcp", "version": "0.12"},
+                    "serverInfo": {"name": "decision-advisor-mcp", "version": APP_VERSION},
                 },
             }
         )

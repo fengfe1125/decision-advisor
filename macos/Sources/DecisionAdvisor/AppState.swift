@@ -174,7 +174,7 @@ final class AppState {
         do {
             let res = try await client.verifyAuth()
             let ms = Int(Date().timeIntervalSince(started) * 1000)
-            let ver = res.version ?? "0.12"
+            let ver = res.version ?? "?"
             showBanner("✅ 远程 VPS 校验通过（v\(ver) · \(ms)ms）")
         } catch {
             showBanner("❌ 远程连接校验失败：\(error.localizedDescription)")

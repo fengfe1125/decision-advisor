@@ -1,10 +1,31 @@
 # Agent 开发者与维护指南 (`agent.md`)
 
 > **项目名称**：成长决策顾问（Decision Advisor）  
-> **当前版本**：`v0.12`  
+> **当前版本**：`v0.13`  
 > **核心定位**：Local-First 个人成长决策顾问与双时间轴长期记忆引擎（原生 macOS SwiftUI 客户端 + 内置/远程 VPS 双模 FastAPI 后端 + 4 路中文混合检索 + 官方 ChatGPT OAuth 订阅直连 & Remote MCP）
 
 本文档面向参与本项目的 AI Coding Agent 与开发者，详细梳理**后端架构设计、核心模块职责、数据库与 API 规范**以及**目前程序的整体现状与运维工作流**。
+
+---
+
+## 〇、版本号规范（每次修改必做）
+
+> **一句话：每次修改都要升级版本号；用户没有指定版本号时，默认在当前版本上 +0.01。macOS 客户端与 VPS 后端共用同一个版本号，同步升级。**
+
+| 规则 | 说明 |
+| :--- | :--- |
+| 格式 | `X.YY`（两位小数），如 `0.12` → `0.13` → … → `0.99` → `1.00`；标签写作 `v0.13` |
+| 默认步长 | 每个合入 `main` 的功能 / 修复 / 文档改动 PR **+0.01**；用户明确给出版本号（如“这次发 0.20”）时以用户为准 |
+| 统一范围 | macOS 客户端（`CFBundleShortVersionString`）、VPS 后端（`GET /` 与 `/api/health` 返回的 `version`、MCP `serverInfo.version`）始终一致。只改了其中一端也一起升级 |
+| 唯一真源 | `app/config.py` 中的 `APP_VERSION`。**不要手改各处**，统一执行 `./bump-version.sh`（默认 +0.01）或 `./bump-version.sh 0.20`，脚本会同步改写 `app/config.py`、`pyproject.toml`、`uv.lock`、`macos/build_app.sh` 与本文件顶部「当前版本」 |
+| Build 号 | `CFBundleVersion` 由版本号自动推导（`0.13` → `13`，`1.00` → `100`），无需手改 |
+| 一个 PR 一次 | 同一个功能分支只升级一次版本号；在分支内首次提交时执行 `./bump-version.sh`，PR 标题/描述中注明新版本号 |
+
+发版与生效顺序（合并 PR 之后）：
+
+1. **VPS**：在已合并的 `main` 上运行 `./deploy/deploy-vps.sh`，`/api/health` 应返回新版本号。
+2. **本机 macOS**：`./macos/build_app.sh --install` 覆盖安装 `/Applications/成长决策顾问.app`。
+3. **公开发布（供 App 内「检查更新」使用）**：`scripts/sync-mirror.sh decision-advisor --push` 同步镜像 → `./macos/build_app.sh --package` 生成 `macos/dist/DecisionAdvisor-v<X.YY>-macOS.zip` → 在 monorepo 打 `decision-advisor/v<X.YY>` 标签，在公开仓库打 `v<X.YY>` 标签并发布 Release，**附件名必须是 `DecisionAdvisor-v<X.YY>-macOS.zip`**（App 内更新器按此名称查找安装包，并用 GitHub 提供的 SHA-256 校验）。
 
 ---
 
@@ -129,7 +150,7 @@ app/
 
 | 分类 | 方法 & 路径 | 功能描述 |
 | :--- | :--- | :--- |
-| **服务与鉴权** | `GET /` | 返回纯 API 服务状态、版本号 (`0.12`)、`deployment_mode` |
+| **服务与鉴权** | `GET /` | 返回纯 API 服务状态、版本号（`app/config.py` 中的 `APP_VERSION`）、`deployment_mode` |
 | | `GET /api/auth/status` | 检查是否需要密码及当前 Header 是否已通过认证 |
 | | `POST /api/auth/verify` | 校验访问密码连通性（供客户端连接测试使用） |
 | | `GET /api/health` | 返回服务健康状态、能力列表 (`capabilities`)、记忆分类统计、向量与图谱索引统计 |
@@ -193,11 +214,16 @@ macOS 客户端已精简为**纯远程客户端**（不再在 `.app` 内打包�
 
 1. **轻量原生打包 (`macos/build_app.sh`)**：
    - 执行 `./macos/build_app.sh --install` 时，使用完整 Xcode 工具链编译 Release 二进制，注入 `LC_BUILD_VERSION` 与 `AppIcon.icns`，签名并覆盖安装 `/Applications/成长决策顾问.app`；不再向 `Application Support` 同步 `.venv`。
+   - App 图标源文件为 Icon Composer 格式 `macos/Assets/AppIcon.icon`（全出血画布，背景由 `icon.json` 的 `fill` 提供），由 `actool` 编译为 `Assets.car` + `AppIcon.icns` 并写入 `CFBundleIconName`，macOS 26+ 会套用系统圆角遮罩，图标占满 Dock / 访达中的位置（不再被缩小放进灰色底板）。无 Xcode `actool` 时回退到 `Assets/AppIcon.png` + `iconutil`。
    - 设置页保留「一键备份回本机 iCloud」（调用 `GET /api/vault/export` 解压至本机 iCloud 目录），也支持填写自定义服务器地址以便开发调试。
 2. **远程 VPS 模式下的 ChatGPT OAuth 跨机回调 (`LocalOAuthCallbackCatcher.swift`)**：
    - OpenAI 官方 Sign in with ChatGPT 强制要求 `redirect_uri` 必须是 `http://127.0.0.1:<port>/auth/callback`。
    - `AppState.startChatGPTLogin()` 会在 Mac 本机通过 `NWListener` 随机绑定一个 `127.0.0.1` 临时端口，将该端口作为 `redirect_port` 传给远程 VPS 的 `/api/chatgpt-oauth/start`。
    - 用户在 Mac 浏览器完成 OpenAI 授权后，浏览器重定向回本机 `127.0.0.1:<port>/auth/callback`，由 `LocalOAuthCallbackCatcher` 捕获完整 URL 并自动 POST 给远程 VPS 的 `/api/chatgpt-oauth/complete-callback`，实现零手动复制的无感跨机授权（同时 UI 保留「手动粘贴回调链接」兜底）。
+3. **应用内检查更新 (`UpdateChecker.swift`)**：
+   - 请求公开仓库 `GET https://api.github.com/repos/fengfe1125/decision-advisor/releases/latest`，按点分数字比较 `tag_name`（去掉 `v`）与本机 `CFBundleShortVersionString`。
+   - 入口：菜单「成长决策顾问 → 检查更新…」、设置页「关于与更新」；默认启动时自动检查（每 12 小时最多一次，可关闭，支持“跳过此版本”）。
+   - 「下载并安装」会下载 `DecisionAdvisor-v<X.YY>-macOS.zip`，校验 SHA-256、Bundle ID 与版本号后，由独立 shell 进程在 App 退出后替换当前 `.app`（失败自动回滚）并重新打开。
 
 ---
 
@@ -226,6 +252,17 @@ cd apps/decision-advisor   # 在 monorepo 根目录执行；独立镜像仓库�
 cd apps/decision-advisor   # 在 monorepo 根目录执行；独立镜像仓库中直接在根目录执行
 ./macos/build_app.sh --install
 # 编译产物位于 macos/dist/成长决策顾问.app，并自动覆盖安装至 /Applications/成长决策顾问.app
+
+# 生成供 GitHub Release / 应用内更新使用的安装包（不安装）
+./macos/build_app.sh --package
+# 产物：macos/dist/DecisionAdvisor-v<X.YY>-macOS.zip
+```
+
+### 3b. 升级版本号（每次修改必做，见「〇、版本号规范」）
+```bash
+./bump-version.sh          # 默认 +0.01
+./bump-version.sh 0.20     # 用户指定版本
+./bump-version.sh --show   # 查看当前版本
 ```
 
 ### 4. 部署或同步至远程 24/7 VPS (`murmur-new-vps`)

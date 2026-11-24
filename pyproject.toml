@@ -1,6 +1,6 @@
 [project]
 name = "decision-advisor"
-version = "0.12"
+version = "0.13"
 description = "Personal Growth Decision Advisor & Memory Engine (Embedded macOS App + 24/7 VPS Remote API & MCP)"
 requires-python = ">=3.11"
 dependencies = [

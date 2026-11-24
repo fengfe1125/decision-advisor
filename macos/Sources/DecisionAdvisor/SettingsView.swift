@@ -6,12 +6,14 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case index = "语义索引"
     case backend = "远程服务器"
     case snapshots = "版本快照"
+    case about = "关于与更新"
 
     var id: String { rawValue }
 }
 
 struct SettingsView: View {
     @Environment(AppState.self) private var state
+    @Environment(UpdateChecker.self) private var updater
     @State private var activeTab: SettingsTab = .models
     @State private var expandedProviderIds: Set<String> = []
     @State private var providers: [ProviderPresetDTO] = []
@@ -69,6 +71,7 @@ struct SettingsView: View {
                             case .index: return "sparkle.magnifyingglass"
                             case .backend: return "server.rack"
                             case .snapshots: return "clock.arrow.circlepath"
+                            case .about: return "arrow.down.app"
                             }
                         }
                     )
@@ -114,6 +117,8 @@ struct SettingsView: View {
                             backendSection
                         case .snapshots:
                             snapshotsSection
+                        case .about:
+                            aboutSection
                         }
                     }
                     .frame(maxWidth: 760, alignment: .leading)
@@ -827,6 +832,107 @@ struct SettingsView: View {
                 }
             }
             .glassCard(cornerRadius: 16)
+        }
+    }
+}
+
+extension SettingsView {
+    // MARK: - Tab 5: About & Updates
+
+    fileprivate var aboutSection: some View {
+        @Bindable var updater = updater
+        return SettingsSectionContainer(
+            title: "关于与更新",
+            subtitle: "从公开仓库 GitHub Releases 检查新版本，下载后自动替换并重新打开 App"
+        ) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    IndexMetricTile(label: "当前版本", value: "v\(updater.currentVersion)", isText: true)
+                    IndexMetricTile(label: "最新发布", value: updater.latest.map { "v\($0.version)" } ?? "—", isText: true)
+                    IndexMetricTile(label: "服务端版本", value: state.health?.version.map { "v\($0)" } ?? "—", isText: true)
+                }
+
+                HStack(spacing: 10) {
+                    Image(systemName: updateStatusIcon)
+                        .foregroundStyle(updater.hasUpdate ? Theme.accent : Theme.textSecondary)
+                    Text(updateStatusText)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(2)
+                    Spacer()
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await updater.check(userInitiated: true) }
+                    } label: {
+                        if updater.phase == .checking {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.mini)
+                                Text("检查中…")
+                            }
+                        } else {
+                            Label("检查更新", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                    }
+                    .buttonStyle(SubtleOutlineButtonStyle())
+                    .disabled(updater.isBusy)
+
+                    if updater.hasUpdate {
+                        Button {
+                            Task { await updater.downloadAndInstall() }
+                        } label: {
+                            Label("下载并安装 v\(updater.latest?.version ?? "")", systemImage: "arrow.down.circle")
+                        }
+                        .buttonStyle(SprucePrimaryButtonStyle())
+                        .disabled(updater.isBusy)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        NSWorkspace.shared.open(updater.latest?.pageURL ?? UpdateChecker.releasesPage)
+                    } label: {
+                        Label("发布页", systemImage: "safari")
+                    }
+                    .buttonStyle(SubtleOutlineButtonStyle(compact: true))
+                }
+
+                Rectangle().fill(Theme.borderSubtle.opacity(0.65)).frame(height: 1)
+
+                Toggle(isOn: $updater.autoCheckEnabled) {
+                    Text("启动时自动检查更新（每 12 小时最多一次）")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.textPrimary)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+            .padding(18)
+            .glassCard(cornerRadius: 16)
+        }
+    }
+
+    private var updateStatusIcon: String {
+        switch updater.phase {
+        case .available: return "sparkles"
+        case .upToDate: return "checkmark.seal"
+        case .failed: return "exclamationmark.triangle"
+        case .downloading, .installing, .checking: return "arrow.down.circle"
+        case .idle: return "clock"
+        }
+    }
+
+    private var updateStatusText: String {
+        let last = updater.lastChecked.map { "上次检查：\($0.formatted(date: .abbreviated, time: .shortened))" } ?? "尚未检查"
+        switch updater.phase {
+        case .idle: return last
+        case .checking: return "正在连接 GitHub 检查更新…"
+        case .upToDate: return "已是最新版本 · \(last)"
+        case .available: return "发现新版本 v\(updater.latest?.version ?? "") · \(last)"
+        case .downloading: return "正在下载新版本安装包…"
+        case .installing: return "正在安装，App 将自动重启…"
+        case .failed(let msg): return "检查失败：\(msg)"
         }
     }
 }

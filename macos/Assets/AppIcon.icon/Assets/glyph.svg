@@ -1,0 +1,14 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 叶针罗盘前景（全出血画布，按 1024/824 等比放大，背景由 icon.json 的 fill 提供） -->
+  <g transform="translate(512 512) scale(1.2427) translate(-512 -512)">
+    <circle cx="512" cy="512" r="302" stroke="#1E2320" stroke-width="22"/>
+    <path d="M512 274L512 244" stroke="#D9A441" stroke-width="16" stroke-linecap="round"/>
+    <path d="M750 512L780 512" stroke="#1E2320" stroke-opacity="0.28" stroke-width="16" stroke-linecap="round"/>
+    <path d="M512 750L512 780" stroke="#1E2320" stroke-opacity="0.28" stroke-width="16" stroke-linecap="round"/>
+    <path d="M274 512L244 512" stroke="#1E2320" stroke-opacity="0.28" stroke-width="16" stroke-linecap="round"/>
+    <path d="M512 512 C620.3 527.6 700.8 403.7 680.4 311.3 C585.9 307.2 477.8 408.1 512 512Z" fill="#255A4A"/>
+    <path d="M537.7 481.4L654.7 341.9" stroke="#8CC7B2" stroke-opacity="0.55" stroke-width="9" stroke-linecap="round"/>
+    <path d="M512 512 C450.7 511.7 393.6 593.9 397.6 648.4 C451.9 642.8 522.9 572.3 512 512Z" fill="#1E2320"/>
+    <circle cx="512" cy="512" r="30" fill="#FBF9F3" stroke="#1E2320" stroke-width="12"/>
+  </g>
+</svg>

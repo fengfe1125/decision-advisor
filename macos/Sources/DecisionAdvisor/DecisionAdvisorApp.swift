@@ -4,20 +4,30 @@ import SwiftUI
 @main
 struct DecisionAdvisorApp: App {
     @State private var appState = AppState()
+    @State private var updater = UpdateChecker()
 
     var body: some Scene {
         WindowGroup("成长决策顾问") {
             ContentView()
                 .environment(appState)
+                .environment(updater)
                 .frame(minWidth: 900, minHeight: 620)
                 .background(WindowConfigurator())
                 .task {
                     await appState.bootstrap()
+                    await updater.checkOnLaunchIfNeeded()
                 }
         }
         .defaultSize(width: 1320, height: 820)
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…") {
+                    Task { await updater.check(userInitiated: true) }
+                }
+                .disabled(updater.isBusy)
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("新建对话") {
                     appState.selectedSection = .chat

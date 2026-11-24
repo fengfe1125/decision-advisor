@@ -11,7 +11,7 @@ LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/nu
 TAILSCALE_IP="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
 
 echo "============================================================"
-echo "  个人成长决策顾问与记忆库 · 纯 API 调试后端（v0.12）"
+echo "  个人成长决策顾问与记忆库 · 纯 API 调试后端（v$(grep -m1 "^APP_VERSION" "$SCRIPT_DIR/app/config.py" | cut -d\" -f2)）"
 echo "============================================================"
 echo "  说明：网页版已下线（已抽离至 demo-mvp/），正式使用请直接打开："
 echo "    - macOS 原生 App：macos/dist/成长决策顾问.app（内置后端 + 直连 VPS）"
