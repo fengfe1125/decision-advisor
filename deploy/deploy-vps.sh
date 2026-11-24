@@ -79,7 +79,8 @@ fi
 EOF
 
 echo "=== 2. Syncing pure API backend code to ${VPS_HOST}:${REMOTE_DIR} ==="
-rsync -az --delete \
+# -rlptz = -a without -o/-g: never carry the Mac's uid/gid (501:staff) onto the VPS.
+rsync -rlptz --delete \
   --exclude '__pycache__' \
   --exclude '*.pyc' \
   --exclude '.DS_Store' \
@@ -98,7 +99,7 @@ scp -q \
 if [[ "$SYNC_VAULT" == "true" ]]; then
   echo "=== 3. Syncing local iCloud vault & config to VPS data directory ==="
   if [[ -d "$LOCAL_VAULT" ]]; then
-    rsync -az --exclude '.DS_Store' --exclude '.git' \
+    rsync -rlptz --exclude '.DS_Store' --exclude '.git' \
       "$LOCAL_VAULT/" "${VPS_HOST}:${REMOTE_DIR}/data/vault/"
   fi
   if [[ -f "$PROJECT_DIR/config.local.json" ]]; then
@@ -119,6 +120,8 @@ set -euo pipefail
 export PATH="/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
 cd /opt/decision-advisor
 rm -rf /opt/decision-advisor/app/__pycache__
+# Normalize ownership of synced code and vault (fixes files left as uid 501 by older deploys).
+chown -R root:root /opt/decision-advisor/app /opt/decision-advisor/data/vault
 uv sync --no-dev
 systemctl daemon-reload
 systemctl enable decision-advisor.service
