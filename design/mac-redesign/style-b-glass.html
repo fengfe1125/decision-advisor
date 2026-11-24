@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>风格 B · 玻璃 — 成长决策顾问</title>
+<script src="data.js"></script>
+<style>
+  :root {
+    --accent: #2C7A64;
+    --accent2: #3E9A7F;
+    --accent-soft: rgba(44,122,100,.12);
+    --text: #1C1F1E;
+    --text2: rgba(28,31,30,.62);
+    --text3: rgba(28,31,30,.42);
+    --line: rgba(0,0,0,.08);
+    --glass: rgba(255,255,255,.58);
+    --glass-strong: rgba(255,255,255,.78);
+    --glass-edge: rgba(255,255,255,.75);
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font); color: var(--text); -webkit-font-smoothing: antialiased; overflow: hidden;
+    display: grid; place-items: center;
+    background:
+      radial-gradient(900px 600px at 12% 18%, #9FD3BE 0%, transparent 60%),
+      radial-gradient(800px 700px at 88% 12%, #B9C9F0 0%, transparent 60%),
+      radial-gradient(900px 700px at 70% 95%, #F3D3B3 0%, transparent 60%),
+      radial-gradient(700px 500px at 10% 95%, #D8C6EE 0%, transparent 60%),
+      #E9ECE6;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  input, textarea { font: inherit; color: inherit; }
+
+  .window {
+    width: min(1380px, calc(100vw - 48px)); height: min(870px, calc(100vh - 48px));
+    border-radius: 20px; overflow: hidden; display: flex; position: relative;
+    background: rgba(250,251,250,.70); backdrop-filter: blur(40px) saturate(1.6); -webkit-backdrop-filter: blur(40px) saturate(1.6);
+    box-shadow: 0 0 0 .5px rgba(0,0,0,.22), inset 0 0 0 1px rgba(255,255,255,.55), 0 40px 90px rgba(30,50,60,.28), 0 10px 26px rgba(30,50,60,.12);
+  }
+
+  /* Floating inset sidebar (Tahoe-style) */
+  .side {
+    width: 248px; flex: none; margin: 8px 0 8px 8px; border-radius: 14px; display: flex; flex-direction: column;
+    background: var(--glass); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+    box-shadow: inset 0 0 0 1px var(--glass-edge), 0 1px 0 rgba(0,0,0,.03), 0 8px 24px rgba(0,0,0,.05);
+  }
+  .lights { height: 42px; display: flex; align-items: center; gap: 8px; padding-left: 14px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.15); }
+  .lights i:nth-child(1){background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
+  .lights .gb { margin-left: auto; margin-right: 8px; }
+  .gb { width: 28px; height: 28px; border-radius: 99px; display: grid; place-items: center; color: var(--text2); }
+  .gb:hover { background: rgba(0,0,0,.06); color: var(--text); }
+
+  .sfield { margin: 2px 10px 10px; display: flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 9px; background: rgba(0,0,0,.05); color: var(--text3); font-size: 12.5px; }
+  .sfield span { margin-left: auto; font: 10.5px var(--mono); }
+  .slist { flex: 1; overflow: auto; padding: 0 8px 10px; }
+  .slist h6 { font-size: 11px; font-weight: 600; color: var(--text3); padding: 12px 8px 4px; }
+  .row { width: 100%; display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 8px; font-size: 13px; text-align: left; }
+  .row:hover { background: rgba(0,0,0,.05); }
+  .row svg { color: var(--accent); flex: none; }
+  .row .ct { margin-left: auto; font-size: 11.5px; color: var(--text3); font-variant-numeric: tabular-nums; }
+  .row.on { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(44,122,100,.35); }
+  .row.on svg, .row.on .ct { color: rgba(255,255,255,.9); }
+  .row.sess { padding: 6px 8px; }
+  .row.sess .mi { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: rgba(255,255,255,.8); box-shadow: 0 0 0 .5px rgba(0,0,0,.08); flex: none; }
+  .row.sess .tt { flex: 1; min-width: 0; }
+  .row.sess .tt b { display: block; font-weight: 500; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row.sess .tt small { font-size: 10.5px; color: var(--text3); }
+  .row.sess.on { background: rgba(44,122,100,.14); color: var(--text); box-shadow: none; }
+  .row.sess.on .tt b { color: var(--accent); font-weight: 600; }
+
+  .sfoot { padding: 10px 12px; display: flex; align-items: center; gap: 9px; border-top: 1px solid var(--line); font-size: 11.5px; }
+  .status { display: flex; align-items: center; gap: 7px; padding: 5px 9px 5px 7px; border-radius: 99px; background: rgba(255,255,255,.7); box-shadow: 0 0 0 .5px rgba(0,0,0,.06); }
+  .status i { width: 7px; height: 7px; border-radius: 50%; background: #28C840; box-shadow: 0 0 0 3px rgba(40,200,64,.18); }
+  .sfoot small { color: var(--text3); font-size: 10.5px; margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  /* Main */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .tb { height: 56px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 20px; }
+  .ttl b { display: block; font-size: 14px; font-weight: 650; }
+  .ttl small { font-size: 11px; color: var(--text3); }
+  .sp { flex: 1; }
+  .capsule { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 99px; background: var(--glass-strong); box-shadow: inset 0 0 0 1px rgba(255,255,255,.9), 0 0 0 .5px rgba(0,0,0,.08), 0 4px 14px rgba(0,0,0,.06); }
+  .capsule .gb { width: 30px; height: 28px; }
+  .seg button { padding: 5px 13px; border-radius: 99px; font-size: 12.5px; color: var(--text2); display: flex; gap: 5px; align-items: center; }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: #fff; color: var(--text); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.05); }
+  .seg button.on svg { color: var(--accent); }
+  .model { padding: 4px 11px 4px 9px; font-size: 12px; display: flex; gap: 7px; align-items: center; }
+  .model i { width: 7px; height: 7px; border-radius: 50%; background: #28C840; }
+  .model svg { color: var(--text3); }
+  .gb.on { background: var(--accent-soft); color: var(--accent); }
+
+  .body { flex: 1; display: flex; min-height: 0; }
+  .center { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .scroll { flex: 1; overflow: auto; padding: 10px 0 140px; }
+  .col { max-width: 760px; margin: 0 auto; padding: 0 32px; }
+
+  .ubub { margin: 14px 0 22px auto; max-width: 78%; width: fit-content; padding: 11px 15px; border-radius: 18px 18px 6px 18px; color: #fff; font-size: 14px; line-height: 1.6;
+    background: linear-gradient(180deg, var(--accent2), var(--accent)); box-shadow: 0 6px 18px rgba(44,122,100,.25); }
+  .ameta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text3); margin-bottom: 10px; }
+  .av { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; color: #fff; background: linear-gradient(140deg, #3E9A7F, #1F5B4A); box-shadow: 0 2px 6px rgba(31,91,74,.3); }
+  .ameta b { color: var(--text); font-weight: 600; }
+
+  .think { border-radius: 12px; background: rgba(255,255,255,.55); box-shadow: inset 0 0 0 1px rgba(255,255,255,.8), 0 0 0 .5px rgba(0,0,0,.06); margin-bottom: 16px; font-size: 12.5px; }
+  .think summary { list-style: none; cursor: pointer; padding: 9px 12px; display: flex; align-items: center; gap: 8px; color: var(--text2); }
+  .think summary::-webkit-details-marker { display: none; }
+  .think summary .sp { flex: 1; }
+  .think[open] summary .chev { transform: rotate(90deg); }
+  .think ul { list-style: none; padding: 0 14px 12px 34px; color: var(--text2); line-height: 1.7; }
+  .think li { position: relative; } .think li::before { content: ""; position: absolute; left: -14px; top: 9px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent2); }
+
+  .ans { font-size: 14.5px; line-height: 1.8; }
+  .ans .blk { display: grid; grid-template-columns: 74px 1fr; gap: 10px; padding: 8px 0; }
+  .tag { justify-self: start; align-self: start; margin-top: 3px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+  .t-事实 { background: rgba(70,110,200,.12); color: #3958A8; }
+  .t-过往教训 { background: rgba(200,110,50,.13); color: #A5551C; }
+  .t-推断 { background: rgba(120,90,190,.12); color: #6646A8; }
+  .t-反方视角 { background: rgba(200,60,70,.11); color: #A93442; }
+  .t-价值判断 { background: rgba(190,150,20,.15); color: #8A6A00; }
+  .t-下一步 { background: var(--accent-soft); color: var(--accent); }
+  .ans a { color: var(--accent); text-decoration: none; font-weight: 500; background: var(--accent-soft); padding: 0 5px; border-radius: 5px; font-size: 12.5px; margin-left: 4px; white-space: nowrap; }
+  .refs { display: flex; gap: 8px; margin: 16px 0 10px; flex-wrap: wrap; }
+  .ref { display: flex; align-items: center; gap: 8px; padding: 7px 11px 7px 8px; border-radius: 10px; background: rgba(255,255,255,.7); box-shadow: 0 0 0 .5px rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.04); font-size: 12px; }
+  .ref .ic { width: 22px; height: 22px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+  .ref small { color: var(--text3); font: 10.5px var(--mono); }
+  .acts { display: flex; gap: 4px; color: var(--text3); margin-top: 4px; }
+  .acts button { display: flex; gap: 5px; align-items: center; padding: 5px 9px; border-radius: 8px; font-size: 12px; }
+  .acts button:hover { background: rgba(0,0,0,.05); color: var(--text); }
+  .acts .pri { margin-left: auto; color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+
+  .composer { position: absolute; left: 0; right: 0; bottom: 16px; padding: 0 32px; }
+  .cbox { max-width: 760px; margin: 0 auto; border-radius: 22px; padding: 8px 8px 8px 8px;
+    background: rgba(255,255,255,.72); backdrop-filter: blur(24px) saturate(1.8); -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 .5px rgba(0,0,0,.1), 0 14px 40px rgba(20,40,40,.14); }
+  .cbox textarea { width: 100%; border: 0; outline: 0; background: none; resize: none; height: 48px; padding: 8px 12px 0; font-size: 14px; line-height: 1.6; }
+  .cbox textarea::placeholder { color: var(--text3); }
+  .cr { display: flex; align-items: center; gap: 4px; }
+  .cr .gb { width: 30px; height: 30px; }
+  .ctog { display: flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 99px; font-size: 11.5px; color: var(--text2); }
+  .ctog:hover { background: rgba(0,0,0,.05); }
+  .ctog.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .sendb { margin-left: auto; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: 0 4px 12px rgba(44,122,100,.4); }
+
+  /* Inspector */
+  .insp { width: 292px; flex: none; margin: 0 8px 8px 0; border-radius: 14px; overflow: auto; padding: 14px;
+    background: var(--glass); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+    box-shadow: inset 0 0 0 1px var(--glass-edge), 0 8px 24px rgba(0,0,0,.05); }
+  .insp h5 { font-size: 11px; font-weight: 600; color: var(--text3); margin: 16px 2px 8px; display: flex; }
+  .insp h5:first-child { margin-top: 2px; }
+  .insp h5 span { margin-left: auto; font-weight: 500; }
+  .grp { border-radius: 10px; background: rgba(255,255,255,.75); box-shadow: 0 0 0 .5px rgba(0,0,0,.07); }
+  .grp > div { display: flex; align-items: center; gap: 9px; padding: 9px 11px; font-size: 12.5px; border-top: 1px solid var(--line); }
+  .grp > div:first-child { border-top: 0; }
+  .grp .r { margin-left: auto; color: var(--text3); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .sw { width: 30px; height: 18px; border-radius: 99px; background: rgba(0,0,0,.14); position: relative; flex: none; cursor: pointer; transition: .2s; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: .2s; }
+  .sw.on { background: var(--accent); } .sw.on::after { left: 14px; }
+  .bar2 { height: 4px; border-radius: 4px; background: rgba(0,0,0,.07); margin-top: 5px; overflow: hidden; }
+  .bar2 i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 4px; }
+  .grp .refrow { display: block; }
+  .refrow b { font-weight: 500; font-size: 12.5px; display: block; }
+  .refrow small { font-size: 10.5px; color: var(--text3); }
+  .chk { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 12px; padding: 5px 4px; color: var(--text2); }
+  .chk i { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; }
+  .bigbtn { width: 100%; margin-top: 14px; padding: 9px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 600; display: flex; justify-content: center; gap: 6px; align-items: center; box-shadow: 0 4px 12px rgba(44,122,100,.3); }
+
+  /* Empty */
+  .hero { text-align: center; padding-top: 70px; }
+  .hero .orb { width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 18px; display: grid; place-items: center; color: #fff; background: linear-gradient(140deg, #49A88B, #1F5B4A); box-shadow: 0 12px 30px rgba(31,91,74,.35), inset 0 1px 0 rgba(255,255,255,.4); }
+  .hero h2 { font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
+  .hero p { color: var(--text2); margin-top: 6px; font-size: 13.5px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 30px; text-align: left; }
+  .card { padding: 14px; border-radius: 14px; background: rgba(255,255,255,.66); box-shadow: inset 0 0 0 1px rgba(255,255,255,.9), 0 0 0 .5px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.04); font-size: 12px; color: var(--text2); line-height: 1.5; }
+  .card:hover { background: rgba(255,255,255,.9); }
+  .card b { display: block; font-size: 13px; color: var(--text); margin: 8px 0 3px; }
+  .card svg { color: var(--accent); }
+
+  /* Memories */
+  .mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; padding: 4px 20px 30px; }
+  .mc { text-align: left; padding: 14px; border-radius: 14px; background: rgba(255,255,255,.66); box-shadow: inset 0 0 0 1px rgba(255,255,255,.9), 0 0 0 .5px rgba(0,0,0,.06); display: flex; flex-direction: column; gap: 6px; min-height: 150px; }
+  .mc:hover { background: rgba(255,255,255,.85); }
+  .mc.on { box-shadow: 0 0 0 2px var(--accent), 0 8px 20px rgba(44,122,100,.18); background: #fff; }
+  .mc .top { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text3); }
+  .mc .top .st { margin-left: auto; color: #C48A00; font-weight: 600; font-size: 11px; }
+  .mc h4 { font-size: 14px; font-weight: 600; line-height: 1.4; }
+  .mc p { font-size: 12px; color: var(--text2); line-height: 1.55; flex: 1; }
+  .emo { display: flex; gap: 4px; flex-wrap: wrap; }
+  .emo span { font-size: 10.5px; padding: 2px 7px; border-radius: 99px; background: rgba(0,0,0,.05); color: var(--text2); }
+  .lockb { font-size: 10px; padding: 1px 6px; border-radius: 99px; background: rgba(200,60,70,.12); color: #A93442; }
+  .filters { display: flex; gap: 6px; padding: 2px 20px 12px; flex-wrap: wrap; }
+  .filters button { font-size: 12px; padding: 4px 11px; border-radius: 99px; background: rgba(255,255,255,.6); box-shadow: 0 0 0 .5px rgba(0,0,0,.08); color: var(--text2); }
+  .filters button.on { background: var(--text); color: #fff; }
+
+  .htl { padding: 30px 30px; overflow-x: auto; }
+  .htl .track { position: relative; display: flex; gap: 16px; padding-top: 30px; min-width: max-content; }
+  .htl .track::before { content: ""; position: absolute; left: 0; right: 0; top: 10px; height: 2px; background: linear-gradient(90deg, rgba(44,122,100,.2), var(--accent)); border-radius: 2px; }
+  .htl .ev { width: 170px; position: relative; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.75); box-shadow: 0 0 0 .5px rgba(0,0,0,.07), 0 4px 12px rgba(0,0,0,.04); }
+  .htl .ev::before { content: ""; position: absolute; top: -26px; left: 14px; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 3px solid var(--accent); }
+  .htl .ev.hi::before { background: var(--accent); }
+  .htl small { font: 11px var(--mono); color: var(--accent); font-weight: 600; }
+  .htl b { display: block; font-size: 13px; margin: 4px 0; }
+  .htl span { font-size: 11px; color: var(--text3); }
+
+  .dt h3 { font-size: 17px; font-weight: 700; line-height: 1.35; margin: 6px 2px 4px; }
+  .dt .sub { font-size: 11.5px; color: var(--text3); margin: 0 2px 12px; }
+  .dt p { font-size: 13px; line-height: 1.75; color: var(--text); padding: 2px 2px; }
+  .dt blockquote { margin: 8px 2px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 13.5px; font-weight: 500; }
+  .dt .lnk { color: var(--accent); font-size: 12.5px; }
+
+  /* Inbox */
+  .capture { max-width: 720px; margin: 30px auto 0; padding: 22px; border-radius: 22px; background: rgba(255,255,255,.7); box-shadow: inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 .5px rgba(0,0,0,.07), 0 18px 40px rgba(20,40,40,.08); }
+  .capture h2 { font-size: 20px; font-weight: 700; }
+  .capture > p { font-size: 12.5px; color: var(--text2); margin: 4px 0 16px; }
+  .moods { display: flex; gap: 8px; flex-wrap: wrap; }
+  .md { display: flex; align-items: center; gap: 7px; padding: 6px 12px 6px 7px; border-radius: 99px; background: rgba(0,0,0,.04); font-size: 12.5px; }
+  .md i { width: 16px; height: 16px; border-radius: 50%; }
+  .md.on { background: #fff; box-shadow: 0 0 0 2px var(--accent); font-weight: 600; }
+  .capture textarea { width: 100%; margin-top: 14px; border: 0; outline: 0; resize: none; height: 96px; padding: 12px 14px; border-radius: 14px; background: rgba(0,0,0,.035); font-size: 14px; line-height: 1.6; }
+  .crow2 { display: flex; align-items: center; margin-top: 12px; font-size: 11.5px; color: var(--text3); gap: 8px; }
+  .pbtn { margin-left: auto; padding: 8px 16px; border-radius: 99px; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 600; box-shadow: 0 4px 12px rgba(44,122,100,.35); }
+  .notes { max-width: 720px; margin: 22px auto 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .note { padding: 14px; border-radius: 14px; background: rgba(255,255,255,.62); box-shadow: 0 0 0 .5px rgba(0,0,0,.06); }
+  .note .h { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text3); }
+  .note .h i { width: 9px; height: 9px; border-radius: 50%; }
+  .note .h b { color: var(--text); font-weight: 600; }
+  .note p { font-size: 13.5px; line-height: 1.6; margin-top: 6px; }
+
+  /* Settings */
+  .setw { max-width: 640px; margin: 10px auto 40px; }
+  .setw h5 { font-size: 12px; font-weight: 600; color: var(--text3); margin: 22px 12px 7px; }
+  .setw .grp > div { padding: 11px 14px; font-size: 13px; }
+  .setw .grp { border-radius: 12px; }
+  .ico { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: #fff; flex: none; }
+  .setw .desc { font-size: 11.5px; color: var(--text3); display: block; margin-top: 1px; }
+  .radio { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid rgba(0,0,0,.2); }
+  .radio.on { border: 5px solid var(--accent); }
+  .sbtn { padding: 4px 11px; border-radius: 7px; background: #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.06); font-size: 12px; color: var(--text); }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.15); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+
+  @media (max-width: 1200px) { .insp { display: none; } .cards { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="window">
+  <aside class="side" id="side"></aside>
+  <main class="main" id="main"></main>
+</div>
+<script>
+const D = window.DA, I = window.ICON;
+const S = { section: "chat", mode: "decision", session: "s1", mem: "m3", memTab: "列表", cat: "全部", mood: "迷茫", asOf: false, sensitive: false, insp: true };
+const moodColor = { 平静: "#8FB8D8", 开心: "#F5C04A", 焦虑: "#E8875A", 疲惫: "#A9A3B8", 委屈: "#C98BB4", 迷茫: "#9C9FE0", 释然: "#6CC4A1" };
+
+function side() {
+  return `
+  <div class="lights"><i></i><i></i><i></i><button class="gb" title="隐藏侧边栏 ⌘\\">${I("sidebar", 16)}</button></div>
+  <div class="sfield">${I("search", 13)} 搜索对话与记忆 <span>⌘K</span></div>
+  <div class="slist">
+    ${D.sections.map(s => `<button class="row ${S.section === s.id ? "on" : ""}" onclick="go('${s.id}')">${I(s.icon, 16)}${s.name}${s.badge ? `<span class="ct">${s.badge}</span>` : ""}</button>`).join("")}
+    <h6 style="display:flex">最近对话<span style="margin-left:auto;cursor:pointer" title="新建对话 ⌘N">${I("plus", 13)}</span></h6>
+    ${D.sessions.map(s => {
+      const m = D.modes.find(x => x.id === s.mode);
+      return `<button class="row sess ${S.section === "chat" && S.session === s.id ? "on" : ""}" onclick="openSess('${s.id}')">
+        <span class="mi">${I(m.icon, 13)}</span><span class="tt"><b>${s.title}</b><small>${m.name} · ${s.time}</small></span></button>`;
+    }).join("")}
+  </div>
+  <div class="sfoot"><span class="status"><i></i>内置引擎</span><small>${D.stats.total} 记忆 · ${D.stats.vectors} 向量</small></div>`;
+}
+
+const model = () => `<button class="capsule model"><i></i>ChatGPT 订阅 · gpt-6 ${I("updown", 12)}</button>`;
+const inspBtn = () => `<div class="capsule"><button class="gb ${S.insp ? "on" : ""}" onclick="S.insp=!S.insp;render()" title="检查器">${I("inspector", 16)}</button></div>`;
+
+function chat() {
+  const m = D.modes.find(x => x.id === S.mode), c = D.conversation, sess = D.sessions.find(s => s.id === S.session);
+  const live = S.mode === "decision" && S.session === "s1";
+  const seg = `<div class="capsule seg">${D.modes.map(x => `<button class="${x.id === S.mode ? "on" : ""}" onclick="S.mode='${x.id}';render()">${I(x.icon, 13)}${x.name}</button>`).join("")}</div>`;
+  const tb = `<div class="tb"><div class="ttl"><b>${live ? sess.title : "新对话"}</b><small>${live ? `${m.name} · ${sess.count} 条消息` : m.name}</small></div><span class="sp"></span>${seg}<span class="sp"></span>${model()}${inspBtn()}</div>`;
+  let body;
+  if (live) {
+    body = `
+      <div class="ubub">${c.user}</div>
+      <div class="ameta"><span class="av">${I("leaf", 13, 2)}</span><b>顾问</b> · 16:42</div>
+      <details class="think"><summary><span class="chev">${I("chevron", 12)}</span>${I("sparkle", 13)} 思考过程<span class="sp"></span>检索 7 篇 · 4.2 秒</summary><ul>${c.thinking.map(t => `<li>${t}</li>`).join("")}</ul></details>
+      <div class="ans">${c.reply.map(r => `<div class="blk"><span class="tag t-${r.tag}">${r.tag}</span><div>${r.text}${r.ref ? `<a href="#">[[${r.ref}]]</a>` : ""}</div></div>`).join("")}</div>
+      <div class="refs">${c.refs.map(r => `<div class="ref"><span class="ic">${I("book", 12)}</span><div>${r.title}<br><small>${r.cat} · ${r.score}</small></div></div>`).join("")}</div>
+      <div class="acts"><button>${I("copy", 13)} 复制</button><button>${I("refresh", 13)} 重新生成</button><button class="pri">${I("sparkle", 13)} 提炼记忆</button></div>`;
+  } else {
+    const st = { chat: ["聊聊今天的经历与感受", "延续「开会被打断」", "梳理“落后感”"], decision: ["开始一次 9 步决策", "复盘「离开创业公司」", "画画课要不要续费"], interview: ["开始冷启动访谈", "补充人生章节", "更新价值排序"], reflect: ["整理收件箱 · 4 条", "回看 11 月情绪", "我和母亲的这一年"] }[S.mode];
+    body = `<div class="hero"><div class="orb">${I(m.icon, 30, 1.8)}</div><h2>${m.title}</h2><p>${m.desc} · ${D.stats.total} 篇记忆随时参与思考</p>
+      <div class="cards">${st.map((t, i) => `<button class="card">${I(["sparkle", "clock", "compass"][i], 18)}<b>${t}</b>点击即可开始，顾问会先读取核心自我。</button>`).join("")}</div></div>`;
+  }
+  const insp = S.insp ? `<aside class="insp">
+      <h5>检索上下文</h5>
+      <div class="grp">
+        <div>${I("clock", 14)} 按历史日期回溯<span class="r">${S.asOf ? "2023-03-01" : ""}<span class="sw ${S.asOf ? "on" : ""}" onclick="S.asOf=!S.asOf;render()"></span></span></div>
+        <div>${I("shield", 14)} 本轮允许敏感记忆<span class="r"><span class="sw ${S.sensitive ? "on" : ""}" onclick="S.sensitive=!S.sensitive;render()"></span></span></div>
+      </div>
+      <h5>本轮引用<span>${c.refs.length} 篇</span></h5>
+      <div class="grp">${c.refs.map(r => `<div class="refrow"><b>${r.title}</b><small>${r.cat} · 相似度 ${r.score}</small><div class="bar2"><i style="width:${r.score * 100}%"></i></div></div>`).join("")}
+        <div style="color:#A93442;font-size:11.5px">${I("lock", 13)} 1 篇敏感记忆已拦截</div></div>
+      ${S.mode === "decision" ? `<h5>9 步协议<span>9 / 9</span></h5><div>${D.decisionSteps.map(s => `<div class="chk"><i>${I("check", 10, 3)}</i>${s}</div>`).join("")}</div>` : ""}
+      <button class="bigbtn">${I("sparkle", 14)} 提炼记忆提案</button>
+    </aside>` : "";
+  return tb + `<div class="body"><div class="center"><div class="scroll"><div class="col">${body}</div></div>
+    <div class="composer"><div class="cbox"><textarea placeholder="${m.ph}"></textarea>
+      <div class="cr"><button class="gb">${I("plus", 16)}</button>
+        <button class="ctog ${S.asOf ? "on" : ""}" onclick="S.asOf=!S.asOf;render()">${I("clock", 13)} ${S.asOf ? "回溯 2023-03-01" : "回溯"}</button>
+        <button class="ctog ${S.sensitive ? "on" : ""}" onclick="S.sensitive=!S.sensitive;render()">${I("shield", 13)} ${S.sensitive ? "敏感已放行" : "敏感保护"}</button>
+        <button class="sendb" title="发送 ⌘↩">${I("arrowUp", 16, 2.2)}</button></div></div></div>
+  </div>${insp}</div>`;
+}
+
+function memories() {
+  const seg = `<div class="capsule seg">${[["列表", "list"], ["语义", "search"], ["时间轴", "timeline"], ["图谱", "graph"]].map(([t, ic]) => `<button class="${S.memTab === t ? "on" : ""}" onclick="S.memTab='${t}';render()">${I(ic, 13)}${t}</button>`).join("")}</div>`;
+  const tb = `<div class="tb"><div class="ttl"><b>记忆库</b><small>${D.stats.total} 篇 · ${D.stats.edges} 条关联 · ${D.stats.sensitive} 篇敏感</small></div><span class="sp"></span>${seg}<span class="sp"></span><div class="capsule"><button class="gb" title="新建">${I("plus", 16)}</button></div>${inspBtn()}</div>`;
+  const cats = ["全部", "00-核心自我", "01-人生章节", "02-经历与感受", "03-重要关系", "04-决策实验室", "05-认知演进"];
+  let content;
+  if (S.memTab === "时间轴") {
+    content = `<div class="htl"><div class="track">${D.timeline.map(t => `<div class="ev ${t.imp >= 8 ? "hi" : ""}"><small>${t.date}</small><b>${t.title}</b><span>${t.cat} · ★${t.imp}</span></div>`).join("")}</div></div>`;
+  } else if (S.memTab === "图谱") {
+    content = graph();
+  } else {
+    const list = D.memories.filter(x => S.cat === "全部" || x.cat === S.cat);
+    content = `${S.memTab === "语义" ? `<div style="padding:4px 20px 12px"><div class="sfield" style="margin:0;background:rgba(255,255,255,.7);padding:10px 12px;font-size:13px">${I("sparkle", 14)} 被否定后的焦虑……（中文向量 + 图谱召回）</div></div>` : ""}
+      <div class="filters">${cats.map(c => `<button class="${S.cat === c ? "on" : ""}" onclick="S.cat='${c}';render()">${c.replace(/^\d+-/, "")}</button>`).join("")}</div>
+      <div class="mgrid">${list.map(x => `<button class="mc ${S.mem === x.id ? "on" : ""}" onclick="S.mem='${x.id}';S.insp=true;render()">
+        <div class="top">${x.cat}${x.privacy === "sensitive" ? `<span class="lockb">敏感</span>` : ""}<span class="st">★ ${x.importance}</span></div>
+        <h4>${x.title}</h4><p>${x.excerpt}</p>
+        <div class="emo">${x.emotions.map(e => `<span style="background:${(moodColor[e] || "#bbb")}33">${e}</span>`).join("")}<span>${x.date.slice(0, 7)}</span></div></button>`).join("")}</div>`;
+  }
+  const mm = D.memories.find(x => x.id === S.mem);
+  const insp = S.insp ? `<aside class="insp dt">
+    <h5>${mm.cat}<span>★ ${mm.importance}/10</span></h5>
+    <h3>${mm.title}</h3><div class="sub">发生于 ${mm.date} · ${mm.privacy} · ${mm.people.join("、") || "无人物"}</div>
+    ${mm.id === "m3" ? D.detail.body.filter(b => b[0] !== "kv").map(([t, v]) => t === "h" ? `<h5>${v}</h5>` : t === "q" ? `<blockquote>“${v}”</blockquote>` : `<p>${v}</p>`).join("") : `<p>${mm.excerpt}</p>`}
+    <h5>情绪结构</h5><div class="grp">${D.detail.body.find(b => b[0] === "kv")[1].map(r => `<div>${r[0]}<span class="r">${r[1]}</span></div>`).join("")}</div>
+    <h5>双链关联</h5><div class="grp">${D.detail.links.map(l => `<div class="lnk">${I("link", 13)} ${l}</div>`).join("")}</div>
+    <button class="bigbtn">${I("edit", 14)} 编辑 Markdown 原文</button>
+  </aside>` : "";
+  return tb + `<div class="body"><div class="center"><div class="scroll" style="padding-bottom:20px">${content}</div></div>${insp}</div>`;
+}
+
+function graph() {
+  const n = [[300, 130, "身体警报", 14], [170, 230, "离开创业公司", 12], [440, 230, "values", 16], [300, 330, "照顾自己", 11], [110, 360, "阿哲", 9], [500, 370, "母亲", 9], [250, 440, "北漂第一章", 10]];
+  const e = [[0, 1], [0, 2], [0, 3], [1, 4], [1, 6], [3, 2], [5, 2], [4, 6]];
+  return `<svg viewBox="0 0 620 500" style="width:100%;height:100%;min-height:440px">
+    <defs><radialGradient id="g"><stop offset="0" stop-color="#5DB596"/><stop offset="1" stop-color="#2C7A64"/></radialGradient></defs>
+    ${e.map(([a, b]) => `<line x1="${n[a][0]}" y1="${n[a][1]}" x2="${n[b][0]}" y2="${n[b][1]}" stroke="rgba(44,122,100,.35)" stroke-width="1.5"/>`).join("")}
+    ${n.map(x => `<circle cx="${x[0]}" cy="${x[1]}" r="${x[3] + 8}" fill="rgba(255,255,255,.7)" stroke="rgba(0,0,0,.06)"/><circle cx="${x[0]}" cy="${x[1]}" r="${x[3]}" fill="url(#g)"/>
+      <text x="${x[0]}" y="${x[1] + x[3] + 24}" text-anchor="middle" font-size="12.5" font-family="-apple-system,PingFang SC" fill="#1C1F1E">${x[2]}</text>`).join("")}
+  </svg>`;
+}
+
+function inbox() {
+  const tb = `<div class="tb"><div class="ttl"><b>速记收件箱</b><small>99-收件箱/inbox.md · ${D.inbox.length} 条待整理</small></div><span class="sp"></span><button class="capsule model" style="color:var(--accent);font-weight:600">${I("sparkle", 13)} 让 AI 整理入库</button></div>`;
+  return tb + `<div class="scroll" style="padding:0 24px 40px">
+    <div class="capture"><h2>10 秒捕捉此刻</h2><p>选一个心情，写一句话。之后在周期反思里一键整理入库。</p>
+      <div class="moods">${D.moods.map(m => `<button class="md ${S.mood === m ? "on" : ""}" onclick="S.mood='${m}';render()"><i style="background:${moodColor[m]}"></i>${m}</button>`).join("")}</div>
+      <textarea placeholder="记下此刻的感受、发生的小事，或脑海里闪过的一个念头…"></textarea>
+      <div class="crow2">${I("cloud", 13)} 追加至本地 inbox.md · 自动同步 iCloud<button class="pbtn">存入收件箱 ⌘↩</button></div></div>
+    <div class="notes">${D.inbox.map(e => `<div class="note"><div class="h"><i style="background:${moodColor[e.mood]}"></i><b>${e.mood}</b>${e.time}</div><p>${e.text}</p></div>`).join("")}</div>
+  </div>`;
+}
+
+function settings() {
+  const tb = `<div class="tb"><div class="ttl"><b>模型与设置</b><small>v${D.version}</small></div></div>`;
+  return tb + `<div class="scroll" style="padding:0 24px 40px"><div class="setw">
+    <h5>后端连接</h5><div class="grp">
+      <div><span class="ico" style="background:#2C7A64">${I("desktop", 15)}</span><div>App 内置后端<span class="desc">随开随启，直读本机 iCloud 记忆</span></div><span class="r"><span class="radio on"></span></span></div>
+      <div><span class="ico" style="background:#4A7BD0">${I("cloud", 15)}</span><div>远程 VPS<span class="desc">24/7 常驻，与手机端、ChatGPT MCP 共享</span></div><span class="r"><span class="radio"></span></span></div>
+    </div>
+    <h5>模型</h5><div class="grp">${D.providers.map((p, i) => `<div><span class="ico" style="background:${["#10A37F", "#C96442", "#4D6BFE"][i]}">${I("sparkle", 14)}</span><div>${p.name}<span class="desc">${p.model}</span></div><span class="r">${p.ok ? "已授权" : "未填 Key"}<button class="sbtn">${i === 0 ? "重新授权" : "配置…"}</button></span></div>`).join("")}</div>
+    <h5>隐私与写入</h5><div class="grp">
+      <div><span class="ico" style="background:#D0453F">${I("shield", 15)}</span>默认拦截 sensitive 记忆<span class="r"><span class="sw on"></span></span></div>
+      <div><span class="ico" style="background:#8E8E93">${I("clock", 15)}</span>每次写入自动 Git 快照<span class="r"><span class="sw on"></span></span></div>
+      <div><span class="ico" style="background:#E3A21A">${I("edit", 15)}</span>核心自我变更强制显示 Diff<span class="r"><span class="sw on"></span></span></div>
+    </div>
+    <h5>索引</h5><div class="grp">
+      <div>向量模型<span class="r">BAAI/bge-small-zh-v1.5</span></div>
+      <div>已嵌入<span class="r">${D.stats.vectors} / ${D.stats.total}<button class="sbtn">重建索引</button></span></div>
+    </div></div></div>`;
+}
+
+function render() {
+  document.getElementById("side").innerHTML = side();
+  document.getElementById("main").innerHTML = { chat, memories, inbox, settings }[S.section]();
+}
+function go(s) { S.section = s; render(); }
+function openSess(id) { S.section = "chat"; S.session = id; S.mode = D.sessions.find(s => s.id === id).mode; render(); }
+document.addEventListener("keydown", e => { if (e.metaKey && "1234".includes(e.key)) { e.preventDefault(); go(D.sections[+e.key - 1].id); } });
+render();
+</script>
+</body>
+</html>

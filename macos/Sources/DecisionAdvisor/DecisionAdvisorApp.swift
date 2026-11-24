@@ -1,17 +1,8 @@
 import AppKit
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated {
-            EmbeddedBackendManager.shared.stopSync()
-        }
-    }
-}
-
 @main
 struct DecisionAdvisorApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var appState = AppState()
 
     var body: some Scene {
@@ -24,7 +15,7 @@ struct DecisionAdvisorApp: App {
                     await appState.bootstrap()
                 }
         }
-        .defaultSize(width: 1180, height: 760)
+        .defaultSize(width: 1320, height: 820)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -65,19 +56,12 @@ struct DecisionAdvisorApp: App {
 
                 Divider()
 
-                Button("切换到远程 VPS 后端") {
-                    Task { await appState.switchBackendMode(.remoteVPS) }
+                Button("备份云端记忆回本机 iCloud") {
+                    Task { await appState.backupRemoteVaultToLocalICloud() }
                 }
-                .disabled(appState.backendMode == .remoteVPS)
+                .disabled(appState.isBackingUpVault || !appState.isOnline)
 
-                Button("切换到 App 内置本地后端") {
-                    Task { await appState.switchBackendMode(.embeddedLocal) }
-                }
-                .disabled(appState.backendMode == .embeddedLocal)
-
-                Divider()
-
-                Button("在访达中打开本机 iCloud 记忆目录") {
+                Button("在访达中打开本机 iCloud 备份目录") {
                     NSWorkspace.shared.open(URL(fileURLWithPath: appState.localICloudVaultPath))
                 }
             }

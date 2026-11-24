@@ -2,7 +2,6 @@
 set -euo pipefail
 
 MACOS_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$MACOS_DIR/.." && pwd)"
 cd "$MACOS_DIR"
 
 APP_NAME="成长决策顾问"
@@ -26,32 +25,11 @@ if [[ ! -f "$BIN_PATH" ]]; then
   exit 1
 fi
 
-echo "=== 2. Assembling ${APP_NAME}.app bundle + embedded backend ==="
+echo "=== 2. Assembling ${APP_NAME}.app bundle (pure remote VPS client) ==="
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources/backend"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$BIN_PATH" "$APP_BUNDLE/Contents/MacOS/$EXEC_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$EXEC_NAME"
-
-# Bundle pure API backend directly inside Contents/Resources/backend
-rsync -a \
-  --exclude '__pycache__' \
-  --exclude '*.pyc' \
-  --exclude '.DS_Store' \
-  "$PROJECT_DIR/app" "$APP_BUNDLE/Contents/Resources/backend/"
-cp "$PROJECT_DIR/pyproject.toml" "$PROJECT_DIR/uv.lock" "$PROJECT_DIR/config.example.json" \
-  "$APP_BUNDLE/Contents/Resources/backend/"
-
-# Ensure self-contained Python runtime in Application Support for offline embedded mode
-APP_RUNTIME_DIR="$HOME/Library/Application Support/DecisionAdvisor/runtime"
-mkdir -p "$APP_RUNTIME_DIR"
-cp "$PROJECT_DIR/pyproject.toml" "$PROJECT_DIR/uv.lock" "$APP_RUNTIME_DIR/"
-if [[ -d "$PROJECT_DIR/.venv" ]]; then
-  echo "=== 2a. Syncing Application Support Python runtime for embedded backend ==="
-  rsync -a --delete \
-    --exclude '__pycache__' \
-    --exclude '*.pyc' \
-    "$PROJECT_DIR/.venv/" "$APP_RUNTIME_DIR/.venv/"
-fi
 
 # Fix Swift 6.4 swiftbuild LC_BUILD_VERSION bug where `sdk` mirrors `minos` (14.0)
 # instead of the linked macOS SDK (e.g. 27.0), enabling native macOS 27 Liquid Glass

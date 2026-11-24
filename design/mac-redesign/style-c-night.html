@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>风格 C · 夜航 — 成长决策顾问</title>
+<script src="data.js"></script>
+<style>
+  :root {
+    --bg0: #0B0D0C; --bg1: #111413; --bg2: #161A19; --bg3: #1C2120; --bg4: #242A28;
+    --line: #232826; --line2: #2E3532;
+    --t1: #E9E7E1; --t2: #A3A9A4; --t3: #6C736E;
+    --amber: #E9A956; --amber-soft: rgba(233,169,86,.12);
+    --teal: #5BB89A; --teal-soft: rgba(91,184,154,.12);
+    --rose: #E2726D; --violet: #9E8BE6; --blue: #6EA6E8;
+    --font: "Inter", -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: var(--font); color: var(--t1); background: #050606 radial-gradient(1000px 600px at 50% -10%, #1B2421, #050606); display: grid; place-items: center; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  input, textarea { font: inherit; color: inherit; }
+  .window { width: min(1400px, calc(100vw - 48px)); height: min(870px, calc(100vh - 48px)); background: var(--bg1); border-radius: 12px; overflow: hidden; display: flex; position: relative;
+    box-shadow: 0 0 0 1px #2A302D, 0 0 0 .5px #000, 0 40px 100px rgba(0,0,0,.6); }
+  .mono { font-family: var(--mono); }
+
+  /* Rail */
+  .rail { width: 64px; flex: none; background: var(--bg0); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px; }
+  .lights { display: flex; gap: 6px; margin-bottom: 18px; margin-top: 2px; }
+  .lights i { width: 10px; height: 10px; border-radius: 50%; display: block; background: #3A403D; }
+  .window:hover .lights i:nth-child(1){background:#FF5F57}.window:hover .lights i:nth-child(2){background:#FEBC2E}.window:hover .lights i:nth-child(3){background:#28C840}
+  .logo { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--bg0); background: linear-gradient(150deg, var(--amber), #C9813A); margin-bottom: 14px; box-shadow: 0 0 24px rgba(233,169,86,.25); }
+  .rb { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: var(--t3); position: relative; }
+  .rb:hover { color: var(--t1); background: var(--bg3); }
+  .rb.on { color: var(--amber); background: var(--amber-soft); }
+  .rb.on::before { content: ""; position: absolute; left: -12px; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--amber); }
+  .rb .bd { position: absolute; top: 5px; right: 4px; min-width: 15px; height: 15px; border-radius: 8px; background: var(--rose); color: #fff; font: 600 9px var(--mono); display: grid; place-items: center; padding: 0 3px; }
+  .rail .sp { flex: 1; }
+  .rail .st { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 10px var(--teal); margin-bottom: 8px; }
+
+  /* List panel */
+  .lp { width: 272px; flex: none; background: var(--bg1); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  .lph { height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 16px; border-bottom: 1px solid var(--line); }
+  .lph b { font-size: 13.5px; font-weight: 600; }
+  .lph .k { margin-left: auto; }
+  .ib { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--t3); }
+  .ib:hover { background: var(--bg3); color: var(--t1); }
+  .cmdk { margin: 12px 12px 6px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line2); color: var(--t3); font-size: 12.5px; cursor: pointer; }
+  .cmdk:hover { border-color: #3B433F; color: var(--t2); }
+  .kb { margin-left: auto; font: 10.5px var(--mono); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line2); color: var(--t3); }
+  .lst { flex: 1; overflow: auto; padding: 4px 8px 12px; }
+  .lst h6 { font: 600 10px var(--mono); color: var(--t3); letter-spacing: .12em; text-transform: uppercase; padding: 14px 8px 6px; }
+  .it { width: 100%; text-align: left; display: grid; grid-template-columns: 18px 1fr auto; gap: 9px; align-items: start; padding: 8px 8px; border-radius: 8px; }
+  .it:hover { background: var(--bg2); }
+  .it.on { background: var(--bg3); box-shadow: inset 0 0 0 1px var(--line2); }
+  .it svg { margin-top: 2px; color: var(--t3); }
+  .it.on svg { color: var(--amber); }
+  .it b { font-size: 12.8px; font-weight: 500; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .it small { font: 10.5px var(--mono); color: var(--t3); }
+  .it .r { font: 10.5px var(--mono); color: var(--t3); }
+  .imp { color: var(--amber) !important; }
+
+  /* Center */
+  .center { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg1); position: relative; }
+  .hd { height: 52px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 22px; border-bottom: 1px solid var(--line); }
+  .crumb { font-size: 12.5px; color: var(--t3); display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; white-space: nowrap; }
+  .crumb b { color: var(--t1); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hd .sp { flex: 0; }
+  .modes, .mdl { flex: none; white-space: nowrap; }
+  .modes { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--bg0); border: 1px solid var(--line); }
+  .modes button { white-space: nowrap; font-size: 12px; padding: 4px 9px; border-radius: 6px; color: var(--t3); display: flex; gap: 5px; align-items: center; }
+  .modes button:hover { color: var(--t1); }
+  .modes button.on { background: var(--bg3); color: var(--t1); box-shadow: inset 0 0 0 1px var(--line2); }
+  .modes button.on svg { color: var(--amber); }
+  .mdl { display: flex; align-items: center; gap: 7px; font: 11.5px var(--mono); color: var(--t2); padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line2); }
+  .mdl i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+
+  .prog { display: flex; align-items: center; gap: 4px; padding: 12px 22px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--bg2), var(--bg1)); }
+  .prog .lbl { font: 10.5px var(--mono); color: var(--t3); margin-right: 10px; letter-spacing: .08em; }
+  .prog span { flex: 1; height: 4px; border-radius: 4px; background: var(--bg4); position: relative; }
+  .prog span.d { background: var(--amber); }
+  .prog span:hover::after { content: attr(data-t); position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 11px; white-space: nowrap; background: var(--bg4); padding: 3px 7px; border-radius: 5px; color: var(--t1); z-index: 5; }
+  .prog .n { font: 11px var(--mono); color: var(--amber); margin-left: 10px; }
+
+  .scroll { flex: 1; overflow: auto; padding: 24px 0 150px; }
+  .col { max-width: 740px; margin: 0 auto; padding: 0 28px; }
+  .msg { display: grid; grid-template-columns: 30px 1fr; gap: 14px; margin-bottom: 26px; }
+  .avt { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font: 600 12px var(--font); }
+  .avt.u { background: var(--bg4); color: var(--t2); }
+  .avt.a { background: linear-gradient(150deg, var(--amber), #C9813A); color: var(--bg0); }
+  .who { font-size: 12px; color: var(--t3); margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+  .who b { color: var(--t1); font-weight: 600; }
+  .utext { font-size: 14.5px; line-height: 1.75; color: var(--t1); }
+  .trace { border: 1px solid var(--line2); border-radius: 9px; background: var(--bg0); font: 11.5px/1.75 var(--mono); color: var(--t3); margin-bottom: 14px; overflow: hidden; }
+  .trace summary { list-style: none; cursor: pointer; padding: 7px 12px; display: flex; gap: 8px; align-items: center; color: var(--t2); }
+  .trace summary::-webkit-details-marker { display: none; }
+  .trace summary .r { margin-left: auto; color: var(--t3); }
+  .trace[open] summary { border-bottom: 1px solid var(--line); }
+  .trace[open] .chev { transform: rotate(90deg); }
+  .trace div { padding: 8px 12px; }
+  .trace .ok { color: var(--teal); } .trace .warn { color: var(--rose); }
+  .blk { border-left: 2px solid var(--line2); padding: 2px 0 2px 16px; margin-bottom: 16px; }
+  .blk h5 { font: 600 10.5px var(--mono); letter-spacing: .12em; margin-bottom: 4px; }
+  .blk p { font-size: 14.3px; line-height: 1.8; color: #D6D4CE; }
+  .blk a { color: var(--amber); text-decoration: none; border-bottom: 1px dashed rgba(233,169,86,.5); font-size: 13px; }
+  .c-事实 { border-color: var(--blue); } .c-事实 h5 { color: var(--blue); }
+  .c-过往教训 { border-color: var(--amber); } .c-过往教训 h5 { color: var(--amber); }
+  .c-推断 { border-color: var(--violet); } .c-推断 h5 { color: var(--violet); }
+  .c-反方视角 { border-color: var(--rose); } .c-反方视角 h5 { color: var(--rose); }
+  .c-价值判断 { border-color: #E3CF6A; background: rgba(227,207,106,.06); padding: 10px 14px 10px 16px; border-radius: 0 8px 8px 0; } .c-价值判断 h5 { color: #E3CF6A; }
+  .c-下一步 { border-color: var(--teal); } .c-下一步 h5 { color: var(--teal); }
+  .acts { display: flex; gap: 6px; margin-top: 6px; }
+  .acts button { font-size: 11.5px; color: var(--t3); padding: 5px 9px; border-radius: 6px; display: flex; gap: 5px; align-items: center; border: 1px solid transparent; }
+  .acts button:hover { color: var(--t1); border-color: var(--line2); }
+  .acts .pri { margin-left: auto; color: var(--amber); border-color: rgba(233,169,86,.35); background: var(--amber-soft); }
+
+  .composer { position: absolute; left: 0; right: 0; bottom: 0; padding: 30px 28px 18px; background: linear-gradient(180deg, transparent, var(--bg1) 34%); }
+  .cbox { max-width: 740px; margin: 0 auto; border: 1px solid var(--line2); border-radius: 12px; background: var(--bg2); box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+  .cbox:focus-within { border-color: rgba(233,169,86,.5); box-shadow: 0 0 0 3px rgba(233,169,86,.1), 0 12px 40px rgba(0,0,0,.4); }
+  .cbox textarea { width: 100%; height: 56px; border: 0; outline: 0; resize: none; background: none; padding: 13px 15px 0; font-size: 14px; line-height: 1.6; }
+  .cbox textarea::placeholder { color: var(--t3); }
+  .cr { display: flex; align-items: center; gap: 6px; padding: 8px 10px; }
+  .tk { font: 11px var(--mono); color: var(--t3); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line2); display: flex; gap: 5px; align-items: center; }
+  .tk:hover { color: var(--t1); }
+  .tk.on { color: var(--amber); border-color: rgba(233,169,86,.45); background: var(--amber-soft); }
+  .send { margin-left: auto; display: flex; align-items: center; gap: 8px; background: var(--amber); color: var(--bg0); font-size: 12px; font-weight: 600; padding: 6px 8px 6px 12px; border-radius: 7px; }
+  .send .kb { border-color: rgba(0,0,0,.25); color: rgba(0,0,0,.6); margin: 0; }
+
+  /* Context panel */
+  .ctx { width: 300px; flex: none; background: var(--bg0); border-left: 1px solid var(--line); overflow: auto; }
+  .ctx section { padding: 16px; border-bottom: 1px solid var(--line); }
+  .ctx h6 { font: 600 10px var(--mono); letter-spacing: .12em; color: var(--t3); text-transform: uppercase; margin-bottom: 12px; display: flex; }
+  .ctx h6 span { margin-left: auto; color: var(--t2); letter-spacing: 0; }
+  .kv { display: flex; align-items: center; font-size: 12px; padding: 5px 0; color: var(--t2); gap: 8px; }
+  .kv .v { margin-left: auto; font: 11.5px var(--mono); color: var(--t1); }
+  .sw { width: 28px; height: 16px; border-radius: 99px; background: var(--bg4); position: relative; cursor: pointer; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--t3); transition: .2s; }
+  .sw.on { background: var(--amber-soft); box-shadow: inset 0 0 0 1px var(--amber); } .sw.on::after { left: 14px; background: var(--amber); }
+  .rf { padding: 9px 0; border-top: 1px solid var(--line); }
+  .rf:first-of-type { border-top: 0; padding-top: 0; }
+  .rf b { font-size: 12.5px; font-weight: 500; display: block; }
+  .rf small { font: 10.5px var(--mono); color: var(--t3); display: flex; }
+  .rf small em { margin-left: auto; font-style: normal; color: var(--teal); }
+  .rf .bar { height: 3px; background: var(--bg4); border-radius: 3px; margin-top: 6px; }
+  .rf .bar i { display: block; height: 100%; background: var(--teal); border-radius: 3px; }
+  .spark { width: 100%; height: 70px; }
+  .legend { display: flex; gap: 12px; font: 10.5px var(--mono); color: var(--t3); margin-top: 6px; }
+  .legend i { display: inline-block; width: 8px; height: 2px; vertical-align: middle; margin-right: 5px; }
+  .mini-tl { position: relative; padding-left: 14px; }
+  .mini-tl::before { content: ""; position: absolute; left: 3px; top: 6px; bottom: 6px; width: 1px; background: var(--line2); }
+  .mini-tl div { position: relative; font-size: 12px; padding: 4px 0; color: var(--t2); display: flex; gap: 8px; }
+  .mini-tl div::before { content: ""; position: absolute; left: -14px; top: 9px; width: 7px; height: 7px; border-radius: 50%; background: var(--bg4); border: 1px solid var(--t3); }
+  .mini-tl div.hi::before { background: var(--amber); border-color: var(--amber); }
+  .mini-tl span { font: 10.5px var(--mono); color: var(--t3); width: 52px; flex: none; }
+  .pbtn { width: 100%; padding: 9px; border-radius: 8px; border: 1px dashed rgba(233,169,86,.5); color: var(--amber); font-size: 12px; display: flex; justify-content: center; gap: 6px; align-items: center; }
+  .pbtn:hover { background: var(--amber-soft); }
+
+  /* Hero */
+  .hero { padding-top: 60px; }
+  .hero .k { font: 11px var(--mono); color: var(--amber); letter-spacing: .14em; }
+  .hero h2 { font-size: 30px; font-weight: 650; letter-spacing: -.02em; margin: 10px 0 6px; }
+  .hero p { color: var(--t2); font-size: 13.5px; }
+  .qs { margin-top: 28px; border: 1px solid var(--line2); border-radius: 10px; overflow: hidden; }
+  .qs button { width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 14px; text-align: left; font-size: 13.5px; border-top: 1px solid var(--line); }
+  .qs button:first-child { border-top: 0; }
+  .qs button:hover { background: var(--bg2); }
+  .qs button svg { color: var(--amber); }
+  .qs button .kb { margin-left: auto; }
+
+  /* Memory reader */
+  .reader h1 { font-size: 26px; font-weight: 650; letter-spacing: -.01em; line-height: 1.35; margin: 8px 0 14px; }
+  .fm { font: 11.5px/1.9 var(--mono); color: var(--t3); background: var(--bg0); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-bottom: 24px; }
+  .fm b { color: var(--teal); font-weight: 400; } .fm em { font-style: normal; color: var(--t1); }
+  .reader h3 { font-size: 13px; font-weight: 600; color: var(--amber); margin: 22px 0 8px; font-family: var(--mono); }
+  .reader h3::before { content: "## "; color: var(--t3); }
+  .reader p { font-size: 14.5px; line-height: 1.85; color: #D6D4CE; }
+  .reader blockquote { border-left: 2px solid var(--amber); padding: 4px 0 4px 14px; font-size: 16px; color: var(--t1); }
+  .reader table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .reader td { padding: 7px 0; border-bottom: 1px solid var(--line); } .reader td:first-child { color: var(--t3); width: 100px; font-family: var(--mono); font-size: 11.5px; }
+
+  /* Inbox */
+  .cap { border: 1px solid var(--line2); border-radius: 12px; background: var(--bg2); padding: 16px; }
+  .moods { display: flex; gap: 6px; flex-wrap: wrap; }
+  .moods button { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line2); color: var(--t2); display: flex; gap: 6px; align-items: center; }
+  .moods button i { width: 7px; height: 7px; border-radius: 50%; }
+  .moods button.on { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+  .cap textarea { width: 100%; height: 90px; margin-top: 12px; background: var(--bg0); border: 1px solid var(--line); border-radius: 8px; outline: 0; resize: none; padding: 10px 12px; font-size: 14px; line-height: 1.6; }
+  .ent { display: grid; grid-template-columns: 90px 64px 1fr; gap: 12px; padding: 13px 4px; border-bottom: 1px solid var(--line); font-size: 14px; align-items: baseline; }
+  .ent time { font: 11px var(--mono); color: var(--t3); }
+  .ent span { font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .ent span i { width: 7px; height: 7px; border-radius: 50%; }
+
+  /* Settings */
+  .sg { border: 1px solid var(--line2); border-radius: 10px; overflow: hidden; margin-bottom: 22px; }
+  .sg > div { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); font-size: 13px; }
+  .sg > div:first-child { border-top: 0; }
+  .sg .r { margin-left: auto; display: flex; gap: 8px; align-items: center; font: 11.5px var(--mono); color: var(--t3); }
+  .sg small { display: block; font-size: 11.5px; color: var(--t3); margin-top: 2px; }
+  .sgt { font: 600 10.5px var(--mono); letter-spacing: .12em; color: var(--t3); margin: 0 2px 8px; }
+  .sbtn { font: 11.5px var(--font); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line2); color: var(--t1); }
+  .rad { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--t3); } .rad.on { border: 5px solid var(--amber); }
+
+  /* Command palette */
+  .pal-bg { position: absolute; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(3px); display: none; z-index: 50; }
+  .pal-bg.open { display: block; }
+  .pal { position: absolute; left: 50%; top: 110px; transform: translateX(-50%); width: 600px; border-radius: 14px; background: #171B1A; border: 1px solid #333B37; box-shadow: 0 30px 80px rgba(0,0,0,.6); overflow: hidden; }
+  .pal input { width: 100%; background: none; border: 0; outline: 0; padding: 16px 18px; font-size: 15px; border-bottom: 1px solid var(--line); }
+  .pal h6 { font: 600 10px var(--mono); letter-spacing: .12em; color: var(--t3); padding: 10px 18px 4px; }
+  .pal .o { display: flex; align-items: center; gap: 12px; padding: 9px 18px; font-size: 13px; color: var(--t2); cursor: pointer; }
+  .pal .o.sel, .pal .o:hover { background: var(--bg3); color: var(--t1); }
+  .pal .o svg { color: var(--t3); } .pal .o.sel svg { color: var(--amber); }
+  .pal .o .kb { margin-left: auto; }
+  .pal .ft { display: flex; gap: 14px; padding: 9px 18px; border-top: 1px solid var(--line); font: 10.5px var(--mono); color: var(--t3); }
+
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: #2A302D; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+  @media (max-width: 1240px) { .ctx { display: none; } }
+  @media (max-width: 1000px) { .lp { display: none; } }
+</style>
+</head>
+<body>
+<div class="window" id="win">
+  <nav class="rail" id="rail"></nav>
+  <aside class="lp" id="lp"></aside>
+  <main class="center" id="center"></main>
+  <aside class="ctx" id="ctx"></aside>
+  <div class="pal-bg" id="pal" onclick="if(event.target===this)togglePal(false)"></div>
+</div>
+<script>
+const D = window.DA, I = window.ICON;
+const S = { section: "chat", mode: "decision", session: "s1", mem: "m3", cat: "全部", mood: "迷茫", asOf: false, sensitive: false };
+const moodColor = { 平静: "#6EA6E8", 开心: "#E3CF6A", 焦虑: "#E9A956", 疲惫: "#8C8A99", 委屈: "#C98BB4", 迷茫: "#9E8BE6", 释然: "#5BB89A" };
+
+function rail() {
+  return `<div class="lights"><i></i><i></i><i></i></div>
+    <div class="logo">${I("compass", 19, 2)}</div>
+    ${D.sections.map(s => `<button class="rb ${S.section === s.id ? "on" : ""}" title="${s.name} ⌘${s.key}" onclick="go('${s.id}')">${I(s.icon, 19)}${s.id === "inbox" ? `<span class="bd">${s.badge}</span>` : ""}</button>`).join("")}
+    <span class="sp"></span>
+    <button class="rb" title="命令面板 ⌘K" onclick="togglePal(true)">${I("command", 18)}</button>
+    <span class="st" title="内置引擎在线"></span>`;
+}
+
+function lp() {
+  if (S.section === "chat") {
+    const groups = {}; D.sessions.forEach(s => (groups[s.group] ||= []).push(s));
+    return `<div class="lph"><b>对话</b><span class="mono" style="font-size:11px;color:var(--t3)">${D.sessions.length}</span><button class="ib k" title="新建 ⌘N">${I("plus", 16)}</button></div>
+      <div class="cmdk" onclick="togglePal(true)">${I("search", 14)} 搜索或执行命令…<span class="kb">⌘K</span></div>
+      <div class="lst">${Object.entries(groups).map(([g, l]) => `<h6>${g}</h6>${l.map(s => {
+        const m = D.modes.find(x => x.id === s.mode);
+        return `<button class="it ${S.session === s.id ? "on" : ""}" onclick="openSess('${s.id}')">${I(m.icon, 14)}<span><b>${s.title}</b><small>${m.name} · ${s.count} msg</small></span><span class="r">${s.time.slice(6)}</span></button>`;
+      }).join("")}`).join("")}</div>`;
+  }
+  if (S.section === "memories") {
+    const cats = ["全部", "00-核心自我", "01-人生章节", "02-经历与感受", "03-重要关系", "04-决策实验室", "05-认知演进"];
+    const list = D.memories.filter(x => S.cat === "全部" || x.cat === S.cat);
+    return `<div class="lph"><b>记忆库</b><span class="mono" style="font-size:11px;color:var(--t3)">${D.stats.total}</span><button class="ib k">${I("plus", 16)}</button></div>
+      <div class="cmdk">${I("sparkle", 14)} 语义检索：被否定后的焦虑…<span class="kb">/</span></div>
+      <div class="lst"><h6>分类</h6>${cats.map(c => `<button class="it ${S.cat === c ? "on" : ""}" style="padding:5px 8px" onclick="S.cat='${c}';render()">${I(c === "全部" ? "list" : "folder", 13)}<span><b style="font-size:12.5px">${c}</b></span><span class="r">${c === "全部" ? D.stats.total : D.memories.filter(m => m.cat === c).length}</span></button>`).join("")}
+      <h6>文档 · ${list.length}</h6>${list.map(m => `<button class="it ${S.mem === m.id ? "on" : ""}" onclick="S.mem='${m.id}';render()">${I(m.privacy === "sensitive" ? "lock" : "book", 14)}<span><b>${m.title}</b><small>${m.date} ${m.emotions.length ? "· " + m.emotions.join("/") : ""}</small></span><span class="r imp">★${m.importance}</span></button>`).join("")}</div>`;
+  }
+  if (S.section === "inbox") {
+    return `<div class="lph"><b>收件箱</b><span class="mono" style="font-size:11px;color:var(--t3)">${D.inbox.length}</span></div>
+      <div class="lst"><h6>心情分布 · 本周</h6>${D.moods.map(m => { const n = D.inbox.filter(e => e.mood === m).length; return `<div class="it" style="cursor:default"><i style="width:8px;height:8px;border-radius:50%;background:${moodColor[m]};margin:5px 0 0 4px"></i><span><b>${m}</b></span><span class="r">${"▮".repeat(n) || "·"}</span></div>`; }).join("")}</div>`;
+  }
+  return `<div class="lph"><b>设置</b></div><div class="lst">${["连接与模型", "记忆与索引", "隐私", "版本快照", "快捷键"].map((t, i) => `<button class="it ${i === 0 ? "on" : ""}">${I(["cloud", "book", "shield", "clock", "command"][i], 14)}<span><b>${t}</b></span><span></span></button>`).join("")}</div>`;
+}
+
+function header(left, right = "") { return `<div class="hd">${left}<span class="sp"></span>${right}</div>`; }
+const mdl = `<button class="mdl"><i></i>gpt-6 · ChatGPT ${I("updown", 11)}</button>`;
+
+function center() {
+  if (S.section === "chat") {
+    const m = D.modes.find(x => x.id === S.mode), c = D.conversation, sess = D.sessions.find(s => s.id === S.session);
+    const live = S.mode === "decision" && S.session === "s1";
+    const modes = `<div class="modes">${D.modes.map(x => `<button class="${x.id === S.mode ? "on" : ""}" onclick="S.mode='${x.id}';render()">${I(x.icon, 12)}${x.name}</button>`).join("")}</div>`;
+    let body;
+    if (live) {
+      body = `
+      <div class="msg"><div class="avt u">我</div><div><div class="who"><b>你</b><span class="mono">16:41</span></div><div class="utext">${c.user}</div></div></div>
+      <div class="msg"><div class="avt a">${I("compass", 15, 2)}</div><div>
+        <div class="who"><b>顾问</b><span class="mono">16:42 · 4.2s · 1,284 tok</span></div>
+        <details class="trace"><summary><span class="chev">${I("chevron", 11)}</span>trace · 检索与推理<span class="r">7 hits / 3 used</span></summary>
+          <div>${c.thinking.map((t, i) => `<span class="${i === 2 ? "warn" : "ok"}">${i === 2 ? "⊘" : "✓"}</span> ${t}`).join("<br>")}</div></details>
+        ${c.reply.map(r => `<div class="blk c-${r.tag}"><h5>${r.tag}</h5><p>${r.text} ${r.ref ? `<a href="#">[[${r.ref}]]</a>` : ""}</p></div>`).join("")}
+        <div class="acts"><button>${I("copy", 12)} 复制</button><button>${I("refresh", 12)} 重答</button><button>${I("clock", 12)} 回溯视角</button><button class="pri">${I("sparkle", 12)} 提炼记忆 <span class="kb" style="margin-left:4px">⌘⇧S</span></button></div>
+      </div></div>`;
+    } else {
+      const st = { chat: ["聊聊今天的经历与感受", "延续「开会被打断」", "梳理最近的“落后感”"], decision: ["开始一次 9 步决策", "复盘「离开第一家创业公司」", "画画课要不要续费"], interview: ["开始冷启动访谈", "补充人生章节 2019–2022", "更新价值排序"], reflect: ["整理收件箱（4 条）", "回看 11 月情绪模式", "我和母亲的这一年"] }[S.mode];
+      body = `<div class="hero"><div class="k">${m.name.toUpperCase()} · NEW SESSION</div><h2>${m.title}</h2><p>${m.desc}</p>
+        <div class="qs">${st.map((t, i) => `<button>${I(["sparkle", "clock", "compass"][i], 15)}${t}<span class="kb">⌘${i + 1}</span></button>`).join("")}</div></div>`;
+    }
+    return header(`<div class="crumb">${I(m.icon, 14)}<b>${live ? sess.title : "新对话"}</b></div>`, modes + mdl) +
+      (live ? `<div class="prog"><span class="lbl">9-STEP</span>${D.decisionSteps.map(s => `<span class="d" data-t="${s}"></span>`).join("")}<span class="n">9/9</span></div>` : "") +
+      `<div class="scroll"><div class="col">${body}</div></div>
+      <div class="composer"><div class="cbox"><textarea placeholder="${m.ph}   （输入 / 切换模式）"></textarea>
+        <div class="cr"><button class="tk ${S.asOf ? "on" : ""}" onclick="S.asOf=!S.asOf;render()">${I("clock", 12)} as_of${S.asOf ? "=2023-03-01" : ""}</button>
+        <button class="tk ${S.sensitive ? "on" : ""}" onclick="S.sensitive=!S.sensitive;render()">${I("shield", 12)} sensitive:${S.sensitive ? "allow" : "block"}</button>
+        <button class="tk">/decision</button>
+        <button class="send">发送 <span class="kb">⌘↩</span></button></div></div></div>`;
+  }
+  if (S.section === "memories") {
+    const mm = D.memories.find(x => x.id === S.mem);
+    const full = mm.id === "m3";
+    return header(`<div class="crumb">${I("folder", 14)} ${mm.cat} / <b>${mm.title}</b></div>`, `<button class="ib" title="编辑">${I("edit", 15)}</button><button class="ib" title="Git 历史">${I("clock", 15)}</button><button class="ib" title="删除">${I("trash", 15)}</button>`) +
+      `<div class="scroll" style="padding-bottom:40px"><div class="col reader">
+        <h1>${mm.title}</h1>
+        <div class="fm">---<br><b>category</b>: <em>${mm.cat}</em><br><b>event_time</b>: <em>${mm.date}</em><br><b>importance</b>: <em>${mm.importance}</em><br><b>emotions</b>: <em>[${mm.emotions.join(", ")}]</em><br><b>people</b>: <em>[${mm.people.join(", ")}]</em><br><b>privacy</b>: <em>${mm.privacy}</em><br>---</div>
+        ${full ? D.detail.body.map(([t, v]) => t === "h" ? `<h3>${v}</h3>` : t === "p" ? `<p>${v}</p>` : t === "q" ? `<blockquote>${v}</blockquote>` : `<table>${v.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</table>`).join("") : `<p>${mm.excerpt}</p>`}
+      </div></div>`;
+  }
+  if (S.section === "inbox") {
+    return header(`<div class="crumb">${I("tray", 14)} <b>99-收件箱/inbox.md</b></div>`, `<button class="mdl" style="color:var(--amber);border-color:rgba(233,169,86,.4)">${I("sparkle", 12)} 整理入库</button>`) +
+      `<div class="scroll" style="padding-bottom:40px"><div class="col">
+        <div class="hero" style="padding-top:10px;margin-bottom:20px"><div class="k">QUICK CAPTURE · 10s</div><h2 style="font-size:24px">此刻在想什么？</h2></div>
+        <div class="cap"><div class="moods">${D.moods.map(m => `<button class="${S.mood === m ? "on" : ""}" onclick="S.mood='${m}';render()"><i style="background:${moodColor[m]}"></i>${m}</button>`).join("")}</div>
+          <textarea placeholder="记下此刻的感受、发生的小事，或脑海里闪过的一个念头…"></textarea>
+          <div class="cr" style="padding:10px 0 0"><span class="mono" style="font-size:11px;color:var(--t3)">→ 本地 inbox.md · iCloud 同步</span><button class="send">存入 <span class="kb">⌘↩</span></button></div></div>
+        <div style="margin-top:26px">${D.inbox.map(e => `<div class="ent"><time>${e.time}</time><span><i style="background:${moodColor[e.mood]}"></i>${e.mood}</span><p>${e.text}</p></div>`).join("")}</div>
+      </div></div>`;
+  }
+  return header(`<div class="crumb">${I("sliders", 14)} 设置 / <b>连接与模型</b></div>`) + `<div class="scroll" style="padding-bottom:40px"><div class="col">
+    <div class="sgt">BACKEND</div><div class="sg">
+      <div><span class="rad on"></span><div>App 内置后端<small>127.0.0.1:18789 · 随开随启</small></div><span class="r">在线 · 12ms</span></div>
+      <div><span class="rad"></span><div>远程 VPS<small>与手机端 / ChatGPT MCP 共享记忆库</small></div><span class="r">未配置</span></div></div>
+    <div class="sgt">PROVIDERS</div><div class="sg">${D.providers.map((p, i) => `<div><span style="width:8px;height:8px;border-radius:50%;background:${p.ok ? "var(--teal)" : "var(--amber)"}"></span><div>${p.name}<small class="mono">${p.model}</small></div><span class="r">${i === 0 ? "active" : p.ok ? "ready" : "no key"}<button class="sbtn">${i === 0 ? "重新授权" : "配置"}</button></span></div>`).join("")}</div>
+    <div class="sgt">PRIVACY</div><div class="sg">
+      <div>默认拦截 sensitive 记忆<span class="r"><span class="sw on"></span></span></div>
+      <div>每次写入自动 Git 快照<span class="r"><span class="sw on"></span></span></div>
+      <div>核心自我变更强制 Diff<span class="r"><span class="sw on"></span></span></div></div>
+  </div></div>`;
+}
+
+function ctx() {
+  const c = D.conversation;
+  // 近 8 周情绪强度（示意）
+  const anx = [3, 4, 3, 5, 6, 5, 7, 6], calm = [6, 5, 6, 5, 4, 5, 4, 5];
+  const path = arr => arr.map((v, i) => `${i ? "L" : "M"}${i * (268 / 7)},${66 - v * 7}`).join(" ");
+  const emo = `<section><h6>情绪走势 · 8 周<span>焦虑 ↑</span></h6>
+    <svg class="spark" viewBox="0 0 268 70"><path d="${path(calm)}" fill="none" stroke="#5BB89A" stroke-width="1.6"/><path d="${path(anx)}" fill="none" stroke="#E9A956" stroke-width="1.8"/>
+    <circle cx="268" cy="${66 - 6 * 7}" r="3" fill="#E9A956"/></svg>
+    <div class="legend"><span><i style="background:#E9A956"></i>焦虑</span><span><i style="background:#5BB89A"></i>平静</span></div></section>`;
+  if (S.section === "chat") return `
+    <section><h6>检索上下文</h6>
+      <div class="kv">${I("clock", 13)} 历史回溯<span class="v">${S.asOf ? "2023-03-01" : "off"}</span><span class="sw ${S.asOf ? "on" : ""}" onclick="S.asOf=!S.asOf;render()"></span></div>
+      <div class="kv">${I("shield", 13)} 敏感记忆<span class="v">${S.sensitive ? "allow" : "block"}</span><span class="sw ${S.sensitive ? "on" : ""}" onclick="S.sensitive=!S.sensitive;render()"></span></div></section>
+    <section><h6>本轮引用<span>${c.refs.length}</span></h6>${c.refs.map(r => `<div class="rf"><b>${r.title}</b><small>${r.cat}<em>${r.score}</em></small><div class="bar"><i style="width:${r.score * 100}%"></i></div></div>`).join("")}</section>
+    ${emo}
+    <section><h6>人生时间轴</h6><div class="mini-tl">${D.timeline.slice(-5).map(t => `<div class="${t.imp >= 8 ? "hi" : ""}"><span>${t.date}</span>${t.title}</div>`).join("")}</div></section>
+    <section><button class="pbtn">${I("sparkle", 13)} 从本对话提炼记忆提案</button></section>`;
+  if (S.section === "memories") return `
+    <section><h6>双链关联<span>${D.detail.links.length}</span></h6>${D.detail.links.map(l => `<div class="rf"><b style="color:var(--amber)">[[${l}]]</b></div>`).join("")}</section>
+    <section><h6>关系图谱</h6>${miniGraph()}</section>
+    <section><h6>Git 版本<span>3</span></h6><div class="mini-tl"><div class="hi"><span>11-20</span>补充“现在回看”</div><div><span>11-02</span>冷启动访谈导入</div><div><span>11-02</span>创建</div></div></section>`;
+  if (S.section === "inbox") return emo + `<section><h6>建议整理</h6><div class="rf"><b>“落后感”出现 2 次</b><small>可并入 05-认知演进</small></div><div class="rf"><b>画画课 vs 新工作</b><small>关联决策：要不要接大厂 Offer</small></div></section>`;
+  return `<section><h6>索引状态</h6><div class="kv">向量模型<span class="v">bge-small-zh</span></div><div class="kv">已嵌入<span class="v">${D.stats.vectors}/${D.stats.total}</span></div><div class="kv">图谱边<span class="v">${D.stats.edges}</span></div><div class="kv">最近同步<span class="v">16:40</span></div></section>`;
+}
+
+function miniGraph() {
+  const n = [[134, 60, 1], [60, 110, 0], [210, 110, 0], [134, 160, 0], [40, 180, 2], [230, 180, 2]];
+  const e = [[0, 1], [0, 2], [0, 3], [1, 4], [3, 2], [5, 2], [1, 3]];
+  return `<svg viewBox="0 0 268 210" style="width:100%">${e.map(([a, b]) => `<line x1="${n[a][0]}" y1="${n[a][1]}" x2="${n[b][0]}" y2="${n[b][1]}" stroke="#2E3532"/>`).join("")}
+    ${n.map(x => `<circle cx="${x[0]}" cy="${x[1]}" r="${x[2] === 1 ? 8 : 5}" fill="${x[2] === 1 ? "#E9A956" : x[2] === 2 ? "#9E8BE6" : "#5BB89A"}"/>`).join("")}</svg>`;
+}
+
+function palette() {
+  const opts = [["新建对话", "plus", "⌘N"], ["开始 9 步决策", "compass", "/decision"], ["速记一条想法", "tray", "⌘⇧I"], ["语义检索记忆…", "search", "/"], ["按历史日期回溯…", "clock", "as_of"], ["提炼当前对话为记忆提案", "sparkle", "⌘⇧S"]];
+  return `<div class="pal"><input placeholder="输入命令、对话或记忆…" autofocus>
+    <h6>命令</h6>${opts.map((o, i) => `<div class="o ${i === 1 ? "sel" : ""}">${I(o[1], 15)}${o[0]}<span class="kb">${o[2]}</span></div>`).join("")}
+    <h6>最近记忆</h6>${D.memories.slice(2, 5).map(m => `<div class="o">${I("book", 15)}${m.title}<span class="kb">★${m.importance}</span></div>`).join("")}
+    <div class="ft"><span>↑↓ 选择</span><span>↩ 执行</span><span>esc 关闭</span></div></div>`;
+}
+function togglePal(open) { const p = document.getElementById("pal"); p.innerHTML = open ? palette() : ""; p.classList.toggle("open", open); if (open) p.querySelector("input").focus(); }
+
+function render() {
+  rail_el.innerHTML = rail(); lp_el.innerHTML = lp(); center_el.innerHTML = center(); ctx_el.innerHTML = ctx();
+}
+const rail_el = document.getElementById("rail"), lp_el = document.getElementById("lp"), center_el = document.getElementById("center"), ctx_el = document.getElementById("ctx");
+function go(s) { S.section = s; render(); }
+function openSess(id) { S.section = "chat"; S.session = id; S.mode = D.sessions.find(s => s.id === id).mode; render(); }
+document.addEventListener("keydown", e => {
+  if (e.metaKey && e.key === "k") { e.preventDefault(); togglePal(!document.getElementById("pal").classList.contains("open")); }
+  else if (e.key === "Escape") togglePal(false);
+  else if (e.metaKey && "1234".includes(e.key)) { e.preventDefault(); go(D.sections[+e.key - 1].id); }
+});
+render();
+</script>
+</body>
+</html>

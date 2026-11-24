@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>风格 A · 纸墨 — 成长决策顾问</title>
+<script src="data.js"></script>
+<style>
+  :root {
+    --desk: #D9D3C7;
+    --paper: #F7F4ED;
+    --side: #EFEAE0;
+    --card: #FFFDF8;
+    --ink: #1E2320;
+    --ink2: #5B5F58;
+    --ink3: #979A91;
+    --rule: #DFD8CA;
+    --rule2: #CFC6B5;
+    --accent: #255A4A;
+    --accent-soft: #E3ECE6;
+    --seal: #B2462E;
+    --seal-soft: #F5E4DC;
+    --serif: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+    --sans: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased;
+    background: radial-gradient(1200px 700px at 30% 20%, #E6E0D4, var(--desk));
+    display: grid; place-items: center; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  textarea, input { font: inherit; color: inherit; }
+
+  .window {
+    width: min(1360px, calc(100vw - 48px)); height: min(860px, calc(100vh - 48px));
+    background: var(--paper); border-radius: 12px; overflow: hidden; display: flex;
+    box-shadow: 0 0 0 0.5px rgba(0,0,0,.25), 0 30px 80px rgba(60,50,30,.28), 0 8px 20px rgba(60,50,30,.12);
+  }
+
+  /* ---------- Sidebar ---------- */
+  .side { width: 244px; flex: none; background: var(--side); border-right: 1px solid var(--rule); display: flex; flex-direction: column; }
+  .lights { height: 44px; display: flex; align-items: center; gap: 8px; padding-left: 16px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18); }
+  .lights i:nth-child(1){background:#EE6A5F}.lights i:nth-child(2){background:#F5BD4F}.lights i:nth-child(3){background:#61C454}
+  .lights .tool { margin-left: auto; margin-right: 10px; color: var(--ink3); padding: 4px; border-radius: 6px; }
+  .lights .tool:hover { background: rgba(0,0,0,.05); color: var(--ink2); }
+
+  .brand { padding: 6px 18px 18px; display: flex; gap: 11px; align-items: center; }
+  .seal { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); color: #F1EBDD; display: grid; place-items: center; box-shadow: inset 0 0 0 2px rgba(255,255,255,.12); }
+  .brand h1 { font-family: var(--serif); font-size: 16px; font-weight: 700; letter-spacing: .04em; }
+  .brand p { font-size: 11px; color: var(--ink3); margin-top: 2px; letter-spacing: .06em; }
+
+  .newchat { margin: 0 14px 14px; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--rule2); border-radius: 8px; background: var(--card); font-size: 13px; }
+  .newchat:hover { border-color: var(--accent); }
+  .newchat svg { color: var(--accent); }
+  .kbd { margin-left: auto; font: 10.5px var(--mono); color: var(--ink3); }
+
+  .nav { padding: 0 10px 10px; }
+  .nav button { width: 100%; display: flex; align-items: baseline; gap: 10px; padding: 7px 10px; border-radius: 6px; font-size: 13.5px; text-align: left; }
+  .nav button .no { font: italic 12px var(--serif); color: var(--ink3); width: 18px; }
+  .nav button .ct { margin-left: auto; font: 11px var(--mono); color: var(--ink3); }
+  .nav button:hover { background: rgba(0,0,0,.035); }
+  .nav button.on { background: var(--card); box-shadow: 0 0 0 1px var(--rule); font-weight: 600; color: var(--accent); }
+  .nav button.on .no { color: var(--seal); }
+
+  .sess { flex: 1; overflow: auto; border-top: 1px solid var(--rule); padding: 8px 10px 12px; }
+  .sess h6 { font: 600 10.5px var(--sans); letter-spacing: .18em; color: var(--ink3); padding: 12px 10px 6px; }
+  .sess button { width: 100%; text-align: left; padding: 7px 10px; border-radius: 6px; display: block; }
+  .sess button:hover { background: rgba(0,0,0,.035); }
+  .sess button.on { background: var(--accent-soft); }
+  .sess .t { font-family: var(--serif); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sess button.on .t { color: var(--accent); font-weight: 700; }
+  .sess .m { font-size: 10.5px; color: var(--ink3); margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+  .foot { border-top: 1px solid var(--rule); padding: 11px 16px; display: flex; align-items: center; gap: 9px; font-size: 11.5px; color: var(--ink2); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #3C8A5E; box-shadow: 0 0 0 3px rgba(60,138,94,.15); }
+  .foot small { display: block; font: 10.5px var(--mono); color: var(--ink3); margin-top: 1px; }
+  .foot .ic { margin-left: auto; display: flex; gap: 2px; color: var(--ink3); }
+  .foot .ic button { padding: 5px; border-radius: 6px; }
+  .foot .ic button:hover { background: rgba(0,0,0,.05); color: var(--ink2); }
+
+  /* ---------- Main ---------- */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .bar { height: 52px; flex: none; display: flex; align-items: center; gap: 18px; padding: 0 22px; border-bottom: 1px solid var(--rule); }
+  .tabs { display: flex; gap: 22px; height: 100%; }
+  .tabs button { position: relative; font-size: 13px; color: var(--ink2); display: flex; align-items: center; gap: 6px; }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button.on { color: var(--ink); font-weight: 600; }
+  .tabs button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--ink); }
+  .bar .sp { flex: 1; }
+  .pill { display: flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--rule2); border-radius: 99px; font-size: 12px; background: var(--card); }
+  .pill .g { width: 6px; height: 6px; border-radius: 50%; background: #3C8A5E; }
+  .pill svg { color: var(--ink3); }
+
+  .scroll { flex: 1; overflow: auto; }
+  .page { max-width: 940px; margin: 0 auto; padding: 40px 48px 60px; display: grid; grid-template-columns: 76px minmax(0, 1fr) 180px; column-gap: 28px; }
+  .page > * { grid-column: 2; }
+  .kicker { font: 600 11px var(--sans); letter-spacing: .22em; color: var(--seal); }
+  .title { font-family: var(--serif); font-size: 30px; font-weight: 700; line-height: 1.3; margin: 10px 0 8px; letter-spacing: .01em; }
+  .byline { font-size: 12px; color: var(--ink3); padding-bottom: 22px; border-bottom: 1px solid var(--rule); margin-bottom: 28px; }
+
+  .steps { display: flex; gap: 0; margin: -6px 0 30px; }
+  .steps span { flex: 1; white-space: nowrap; font-size: 10.5px; color: var(--ink3); border-top: 2px solid var(--rule); padding-top: 6px; text-align: left; letter-spacing: .02em; }
+  .steps span.done { border-color: var(--accent); color: var(--accent); }
+  .steps span b { font: italic 11px var(--serif); margin-right: 3px; }
+
+  .who { grid-column: 1; font: 600 11px var(--sans); letter-spacing: .18em; color: var(--ink3); padding-top: 6px; text-align: right; }
+  .quote { font-family: var(--serif); font-size: 17px; line-height: 1.85; color: var(--ink); padding-left: 18px; border-left: 3px solid var(--seal); margin-bottom: 30px; }
+
+  details.think { margin-bottom: 26px; font-size: 12.5px; color: var(--ink2); }
+  details.think summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; color: var(--ink3); font-size: 12px; }
+  details.think summary::-webkit-details-marker { display: none; }
+  details.think[open] summary svg { transform: rotate(90deg); }
+  details.think ol { margin: 10px 0 0 18px; line-height: 1.8; padding-left: 14px; border-left: 1px dashed var(--rule2); }
+  details.think li { margin-left: 10px; }
+
+  .sec { display: contents; }
+  .sec .lab { grid-column: 1; text-align: right; font: 700 12px var(--serif); color: var(--accent); padding-top: 5px; letter-spacing: .08em; }
+  .sec p { grid-column: 2; font-family: var(--serif); font-size: 15.5px; line-height: 1.95; margin-bottom: 18px; color: #262A27; }
+  .sec p sup { font: 600 10px var(--sans); color: var(--seal); margin-left: 2px; }
+  .sec .note { grid-column: 3; font-size: 11.5px; line-height: 1.6; color: var(--ink2); padding-top: 5px; border-top: 1px solid var(--rule); align-self: start; }
+  .sec .note b { color: var(--seal); font-weight: 600; margin-right: 4px; }
+  .sec .note em { display: block; font-style: normal; color: var(--ink3); font-size: 10.5px; margin-top: 2px; }
+  .sec.judge p { background: var(--seal-soft); padding: 12px 16px; border-radius: 4px; }
+
+  .actions { display: flex; gap: 18px; font-size: 12px; color: var(--ink3); padding-top: 14px; border-top: 1px solid var(--rule); margin-top: 6px; }
+  .actions button { display: inline-flex; align-items: center; gap: 5px; }
+  .actions button:hover { color: var(--ink); }
+  .actions .primary { color: var(--accent); font-weight: 600; margin-left: auto; }
+
+  .composer { flex: none; padding: 0 48px 22px; }
+  .compose-card { max-width: 844px; margin: 0 auto; background: var(--card); border: 1px solid var(--rule2); border-radius: 10px; box-shadow: 0 8px 28px rgba(80,70,40,.07); }
+  .compose-card textarea { width: 100%; border: 0; outline: 0; resize: none; background: none; padding: 16px 18px 6px; font-family: var(--serif); font-size: 15px; line-height: 1.7; height: 64px; }
+  .compose-card textarea::placeholder { color: var(--ink3); }
+  .crow { display: flex; align-items: center; gap: 8px; padding: 8px 10px 10px 14px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink2); padding: 4px 9px; border-radius: 5px; border: 1px solid var(--rule); }
+  .chip:hover { border-color: var(--rule2); background: var(--paper); }
+  .chip.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .send { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; background: var(--ink); color: var(--paper); padding: 7px 14px; border-radius: 6px; font-size: 12.5px; }
+  .send .kbd { color: #A8A99F; margin: 0; }
+
+  /* Empty state for other modes */
+  .empty { grid-column: 2; padding-top: 70px; }
+  .empty .title { font-size: 34px; }
+  .empty p.d { font-family: var(--serif); color: var(--ink2); font-size: 15px; line-height: 1.8; }
+  .starters { margin-top: 30px; border-top: 1px solid var(--rule); }
+  .starters button { width: 100%; display: flex; align-items: center; gap: 14px; padding: 15px 4px; border-bottom: 1px solid var(--rule); text-align: left; }
+  .starters button:hover { background: rgba(0,0,0,.02); }
+  .starters i { font: italic 13px var(--serif); color: var(--seal); width: 20px; }
+  .starters b { font-family: var(--serif); font-size: 15px; font-weight: 600; }
+  .starters span { font-size: 12px; color: var(--ink3); margin-left: auto; }
+
+  /* ---------- Memories ---------- */
+  .mem { flex: 1; display: flex; min-height: 0; }
+  .mlist { width: 360px; flex: none; border-right: 1px solid var(--rule); display: flex; flex-direction: column; }
+  .msearch { padding: 16px 20px 10px; }
+  .msearch label { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--rule2); padding: 6px 0; color: var(--ink3); }
+  .msearch input { border: 0; outline: 0; background: none; flex: 1; font-size: 13px; color: var(--ink); }
+  .cats { display: flex; gap: 6px; padding: 4px 20px 12px; flex-wrap: wrap; }
+  .cats button { font-size: 11px; padding: 3px 8px; border-radius: 4px; color: var(--ink2); border: 1px solid var(--rule); }
+  .cats button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .mitems { flex: 1; overflow: auto; }
+  .mitem { display: block; width: 100%; text-align: left; padding: 14px 20px; border-top: 1px solid var(--rule); }
+  .mitem:hover { background: rgba(0,0,0,.02); }
+  .mitem.on { background: var(--card); box-shadow: inset 3px 0 0 var(--seal); }
+  .mitem .c { font: 600 10px var(--sans); letter-spacing: .14em; color: var(--ink3); display: flex; gap: 8px; }
+  .mitem .c .imp { margin-left: auto; color: var(--seal); font: 600 11px var(--mono); letter-spacing: 0; }
+  .mitem h4 { font-family: var(--serif); font-size: 15px; margin: 5px 0 4px; }
+  .mitem p { font-size: 12px; color: var(--ink2); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .mitem .tags { margin-top: 6px; font-size: 11px; color: var(--accent); }
+  .mitem .lock { color: var(--seal); font-size: 11px; }
+
+  .reader { flex: 1; overflow: auto; }
+  .reader .page { grid-template-columns: minmax(0, 1fr) 190px; max-width: 900px; }
+  .reader .page > * { grid-column: 1; }
+  .meta { display: grid; grid-template-columns: repeat(4, auto); justify-content: start; column-gap: 28px; row-gap: 4px; font-size: 11.5px; color: var(--ink3); padding: 12px 0 22px; border-bottom: 1px solid var(--rule); margin-bottom: 26px; }
+  .meta b { display: block; color: var(--ink); font-weight: 500; font-size: 12.5px; margin-top: 2px; }
+  .art h3 { font-family: var(--serif); font-size: 16px; margin: 26px 0 10px; display: flex; align-items: center; gap: 10px; }
+  .art h3::before { content: ""; width: 14px; height: 1px; background: var(--seal); }
+  .art p { font-family: var(--serif); font-size: 15.5px; line-height: 1.95; color: #262A27; }
+  .art blockquote { font-family: var(--serif); font-size: 20px; line-height: 1.6; color: var(--seal); padding: 6px 0 6px 18px; border-left: 2px solid var(--seal); }
+  .art table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .art td { border-bottom: 1px solid var(--rule); padding: 8px 0; }
+  .art td:first-child { color: var(--ink3); width: 110px; font-size: 12px; }
+  .aside { grid-column: 2 !important; grid-row: 1 / span 20; font-size: 12px; color: var(--ink2); padding-top: 8px; }
+  .aside h6 { font: 600 10px var(--sans); letter-spacing: .18em; color: var(--ink3); margin: 0 0 8px; }
+  .aside a { display: block; padding: 6px 0; border-top: 1px solid var(--rule); color: var(--accent); text-decoration: none; font-family: var(--serif); font-size: 13px; }
+  .aside .btns { margin-top: 20px; display: grid; gap: 6px; }
+  .aside .btns button { text-align: left; font-size: 12px; padding: 7px 10px; border: 1px solid var(--rule2); border-radius: 6px; background: var(--card); display: flex; gap: 7px; align-items: center; }
+
+  .tl { padding: 8px 20px 20px 34px; position: relative; }
+  .tl::before { content: ""; position: absolute; left: 26px; top: 14px; bottom: 20px; width: 1px; background: var(--rule2); }
+  .tl div { position: relative; padding: 10px 0 10px 18px; }
+  .tl div::before { content: ""; position: absolute; left: -12px; top: 16px; width: 9px; height: 9px; border-radius: 50%; background: var(--paper); border: 2px solid var(--accent); }
+  .tl div.hi::before { border-color: var(--seal); background: var(--seal); }
+  .tl small { font: 11px var(--mono); color: var(--ink3); }
+  .tl b { display: block; font-family: var(--serif); font-size: 14.5px; margin: 2px 0; }
+  .tl span { font-size: 11px; color: var(--ink3); }
+
+  /* ---------- Inbox ---------- */
+  .journal { max-width: 720px; margin: 0 auto; padding: 46px 48px 60px; }
+  .journal .title { font-size: 32px; }
+  .journal .sub { font-family: var(--serif); color: var(--ink2); font-size: 14.5px; margin-bottom: 30px; }
+  .moods { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 14px; }
+  .moods button { font-family: var(--serif); font-size: 14px; padding: 6px 14px; border: 1px solid var(--rule2); border-radius: 99px; background: var(--card); }
+  .moods button.on { border-color: var(--seal); color: var(--seal); background: var(--seal-soft); }
+  .lined { width: 100%; height: 120px; border: 1px solid var(--rule2); border-radius: 8px; background: var(--card) repeating-linear-gradient(transparent 0 31px, var(--rule) 31px 32px); background-position: 0 14px; padding: 14px 18px; font-family: var(--serif); font-size: 15px; line-height: 32px; outline: none; resize: none; }
+  .jrow { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; color: var(--ink3); }
+  .entries { margin-top: 44px; }
+  .entries h6 { font: 600 10.5px var(--sans); letter-spacing: .2em; color: var(--ink3); padding-bottom: 8px; border-bottom: 1px solid var(--ink); display: flex; }
+  .entries h6 button { margin-left: auto; letter-spacing: 0; color: var(--accent); font-size: 12px; font-weight: 600; }
+  .entry { display: grid; grid-template-columns: 96px 56px 1fr; gap: 14px; padding: 15px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+  .entry time { font: 11px var(--mono); color: var(--ink3); }
+  .entry .md { font-family: var(--serif); color: var(--seal); font-size: 13px; }
+  .entry p { font-family: var(--serif); font-size: 15px; line-height: 1.7; }
+
+  /* ---------- Settings ---------- */
+  .set { max-width: 760px; margin: 0 auto; padding: 46px 48px 60px; }
+  .set .title { font-size: 32px; margin-bottom: 28px; }
+  .group { border-top: 1px solid var(--ink); padding: 18px 0 30px; display: grid; grid-template-columns: 170px 1fr; gap: 20px; }
+  .group h5 { font-family: var(--serif); font-size: 15px; }
+  .group h5 small { display: block; font: 11.5px var(--sans); color: var(--ink3); margin-top: 6px; line-height: 1.6; font-weight: 400; }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .opt { text-align: left; padding: 14px; border: 1px solid var(--rule2); border-radius: 8px; background: var(--card); font-size: 12px; color: var(--ink2); line-height: 1.55; }
+  .opt b { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--ink); margin-bottom: 4px; }
+  .opt.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .opt.on b { color: var(--accent); }
+  .rows > div { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--rule); font-size: 13px; }
+  .rows small { color: var(--ink3); font: 11.5px var(--mono); }
+  .rows .r { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--ink3); }
+  .tog { width: 32px; height: 19px; border-radius: 99px; background: var(--rule2); position: relative; }
+  .tog::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .tog.on { background: var(--accent); } .tog.on::after { left: 15px; }
+  .btn { padding: 5px 11px; border: 1px solid var(--rule2); border-radius: 6px; background: var(--card); font-size: 12px; color: var(--ink); }
+
+  @media (max-width: 1180px) {
+    .page { grid-template-columns: 56px minmax(0, 1fr); padding: 32px 32px 50px; column-gap: 20px; }
+    .sec .note { display: none; }
+    .reader .page { grid-template-columns: 1fr; } .aside { grid-column: 1 !important; grid-row: auto; margin-top: 30px; }
+  }
+  .scroll::-webkit-scrollbar, .mitems::-webkit-scrollbar, .reader::-webkit-scrollbar, .sess::-webkit-scrollbar { width: 8px; }
+  .scroll::-webkit-scrollbar-thumb, .mitems::-webkit-scrollbar-thumb, .reader::-webkit-scrollbar-thumb, .sess::-webkit-scrollbar-thumb { background: var(--rule2); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+</style>
+</head>
+<body>
+<div class="window">
+  <aside class="side" id="side"></aside>
+  <main class="main" id="main"></main>
+</div>
+
+<script>
+const D = window.DA, I = window.ICON;
+const S = { section: "chat", mode: "decision", session: "s1", mem: "m3", memTab: "列表", cat: "全部", mood: "迷茫", asOf: false, sensitive: false };
+const circled = "①②③④⑤⑥⑦⑧⑨";
+
+function side() {
+  const groups = {};
+  D.sessions.forEach(s => (groups[s.group] ||= []).push(s));
+  return `
+  <div class="lights"><i></i><i></i><i></i><button class="tool" title="隐藏侧边栏 ⌘\\">${I("sidebar", 15)}</button></div>
+  <div class="brand">
+    <div class="seal">${I("leaf", 18, 1.8)}</div>
+    <div><h1>成长决策顾问</h1><p>长期记忆 · 决策伴侣</p></div>
+  </div>
+  <button class="newchat" onclick="go('chat')">${I("pen", 14)} 新建对话 <span class="kbd">⌘N</span></button>
+  <nav class="nav">${D.sections.map((s, i) => `
+    <button class="${S.section === s.id ? "on" : ""}" onclick="go('${s.id}')">
+      <span class="no">0${i + 1}</span>${s.name}${s.badge ? `<span class="ct">${s.badge}</span>` : ""}
+    </button>`).join("")}
+  </nav>
+  <div class="sess">${Object.entries(groups).map(([g, list]) => `
+    <h6>${g}</h6>${list.map(s => `
+      <button class="${S.section === "chat" && S.session === s.id ? "on" : ""}" onclick="openSess('${s.id}')">
+        <div class="t">${s.title}</div>
+        <div class="m">${D.modes.find(m => m.id === s.mode).name} · ${s.count} 条 · ${s.time.slice(6)}</div>
+      </button>`).join("")}`).join("")}
+  </div>
+  <div class="foot">
+    <span class="dot"></span>
+    <div>内置引擎在线<small>${D.stats.total} 记忆 · ${D.stats.vectors} 向量</small></div>
+    <div class="ic"><button title="打开 iCloud 记忆目录">${I("folder", 14)}</button><button title="刷新 ⌘R">${I("refresh", 14)}</button></div>
+  </div>`;
+}
+
+function bar(inner) { return `<div class="bar">${inner}</div>`; }
+function modelPill() { return `<button class="pill"><span class="g"></span>ChatGPT 订阅 · gpt-6 ${I("updown", 12)}</button>`; }
+
+function chat() {
+  const m = D.modes.find(x => x.id === S.mode);
+  const c = D.conversation;
+  const tabs = `<div class="tabs">${D.modes.map(x => `<button class="${x.id === S.mode ? "on" : ""}" onclick="S.mode='${x.id}';render()">${x.name}</button>`).join("")}</div>`;
+  let body;
+  if (S.mode === "decision" && S.session === "s1") {
+    let n = 0;
+    body = `
+      <div class="kicker">9 步决策 · 第 47 号</div>
+      <h2 class="title">要不要接大厂的高压 Offer</h2>
+      <div class="byline">2026 年 11 月 23 日 · 参考 3 篇本地记忆 · 1 篇敏感记忆已拦截</div>
+      <div class="steps">${["澄清", "核心自我", "召回", "选项", "事实/推断", "教训", "反方", "权衡", "行动"].map((s, i) => `<span class="done" title="${D.decisionSteps[i]}"><b>${i + 1}</b>${s}</span>`).join("")}</div>
+      <div class="who">你</div>
+      <blockquote class="quote">${c.user}</blockquote>
+      <div class="who">顾问</div>
+      <details class="think"><summary>${I("chevron", 11)} 思考过程 · 检索 7 篇，用时 4.2 秒</summary><ol>${c.thinking.map(t => `<li>${t}</li>`).join("")}</ol></details>
+      ${c.reply.map(r => {
+        const mark = r.ref ? `<sup>${circled[n]}</sup>` : "";
+        const note = r.ref ? `<div class="note"><b>${circled[n++]}</b>${r.ref}<em>[[双链]] · 点击查看原文</em></div>` : "";
+        return `<div class="sec ${r.tag === "价值判断" ? "judge" : ""}"><div class="lab">${r.tag}</div><p>${r.text}${mark}</p>${note}</div>`;
+      }).join("")}
+      <div class="actions">
+        <button>${I("copy", 13)} 复制</button><button>${I("refresh", 13)} 重新生成</button><button>${I("clock", 13)} 按 2023-03 视角重答</button>
+        <button class="primary">${I("sparkle", 13)} 提炼记忆提案</button>
+      </div>`;
+  } else {
+    const st = {
+      chat: [["聊聊今天的经历与感受", "日常倾诉"], ["开会又被打断的那个下午，还想再说说", "延续"], ["最近总觉得“落后”，想梳理一下", "情绪"]],
+      decision: [["我最近面临一个重要选择，想请你按 9 步帮我分析", "新决策"], ["复盘「离开第一家创业公司」的预期与结果", "复盘"], ["画画课要不要续费？", "小决定"]],
+      interview: [["开始冷启动访谈", "约 15 分钟"], ["补充一段人生章节：2019–2022 北漂", "章节"], ["更新我的价值排序", "核心自我"]],
+      reflect: [["整理收件箱与周期反思", "4 条待整理"], ["回看 11 月的情绪模式", "月度"], ["我和母亲的关系，这一年有什么变化？", "关系"]],
+    }[S.mode];
+    body = `<div class="empty">
+      <div class="kicker">${m.name}</div>
+      <h2 class="title">${m.title}</h2>
+      <p class="d">${m.desc}。${D.stats.total} 篇记忆随时参与思考。</p>
+      <div class="starters">${st.map((s, i) => `<button><i>${i + 1}</i><b>${s[0]}</b><span>${s[1]} ${I("chevron", 11)}</span></button>`).join("")}</div>
+    </div>`;
+  }
+  return bar(`${tabs}<span class="sp"></span>${modelPill()}`) + `
+    <div class="scroll"><article class="page">${body}</article></div>
+    <div class="composer"><div class="compose-card">
+      <textarea placeholder="${m.ph}"></textarea>
+      <div class="crow">
+        <button class="chip ${S.asOf ? "on" : ""}" onclick="S.asOf=!S.asOf;render()">${I("clock", 12)} ${S.asOf ? "回溯至 2023-03-01" : "按历史日期回溯"}</button>
+        <button class="chip ${S.sensitive ? "on" : ""}" onclick="S.sensitive=!S.sensitive;render()">${I("shield", 12)} ${S.sensitive ? "本轮允许敏感记忆" : "敏感保护中"}</button>
+        <button class="send">发送 <span class="kbd">⌘↩</span></button>
+      </div>
+    </div></div>`;
+}
+
+function memories() {
+  const cats = ["全部", "00-核心自我", "01-人生章节", "02-经历与感受", "03-重要关系", "04-决策实验室", "05-认知演进"];
+  const list = D.memories.filter(x => S.cat === "全部" || x.cat === S.cat);
+  const tabs = `<div class="tabs">${["列表", "语义", "时间轴", "图谱"].map(t => `<button class="${S.memTab === t ? "on" : ""}" onclick="S.memTab='${t}';render()">${t}</button>`).join("")}</div>`;
+  let left;
+  if (S.memTab === "时间轴") {
+    left = `<div class="tl">${D.timeline.map(t => `<div class="${t.imp >= 8 ? "hi" : ""}"><small>${t.date}</small><b>${t.title}</b><span>${t.cat} · 显著性 ${t.imp}</span></div>`).join("")}</div>`;
+  } else if (S.memTab === "图谱") {
+    left = graphSVG();
+  } else {
+    left = `
+      <div class="cats">${cats.map(c => `<button class="${S.cat === c ? "on" : ""}" onclick="S.cat='${c}';render()">${c.replace(/^\d+-/, "")}</button>`).join("")}</div>
+      <div class="mitems">${list.map(x => `
+        <button class="mitem ${S.mem === x.id ? "on" : ""}" onclick="S.mem='${x.id}';render()">
+          <div class="c">${x.cat}${x.privacy === "sensitive" ? `<span class="lock">● 敏感</span>` : ""}<span class="imp">★${x.importance}</span></div>
+          <h4>${x.title}</h4><p>${x.excerpt}</p>
+          ${x.emotions.length ? `<div class="tags">${x.emotions.join(" · ")}${x.intensity ? ` — 强度 ${x.intensity}` : ""}</div>` : ""}
+        </button>`).join("")}</div>`;
+  }
+  const mm = D.memories.find(x => x.id === S.mem) || D.memories[2];
+  const full = mm.id === "m3";
+  return bar(`${tabs}<span class="sp"></span><button class="pill">${I("plus", 12)} 新建记忆</button>`) + `
+    <div class="mem">
+      <div class="mlist">
+        <div class="msearch"><label>${I("search", 14)}<input placeholder="${S.memTab === "语义" ? "自然语言语义检索，如：被否定后的焦虑" : "搜索标题、人物、感受…"}"></label></div>
+        ${left}
+      </div>
+      <div class="reader"><article class="page">
+        <div class="kicker">${mm.cat}</div>
+        <h2 class="title">${mm.title}</h2>
+        <div class="meta">
+          <div>发生于<b>${mm.date}</b></div><div>显著性<b>${mm.importance} / 10</b></div>
+          <div>隐私<b>${mm.privacy}</b></div><div>人物<b>${mm.people.join("、") || "—"}</b></div>
+        </div>
+        <div class="art">${full ? D.detail.body.map(([t, v]) =>
+          t === "h" ? `<h3>${v}</h3>` : t === "p" ? `<p>${v}</p>` : t === "q" ? `<blockquote>“${v}”</blockquote>` :
+          `<table>${v.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</table>`).join("") : `<p>${mm.excerpt}</p>`}</div>
+        <aside class="aside">
+          <h6>双链关联</h6>${D.detail.links.map(l => `<a href="#">[[${l}]]</a>`).join("")}
+          <div class="btns"><button>${I("edit", 13)} 编辑原文</button><button>${I("clock", 13)} Git 历史 · 3 个版本</button><button>${I("trash", 13)} 删除</button></div>
+        </aside>
+      </article></div>
+    </div>`;
+}
+
+function graphSVG() {
+  const nodes = [[170, 70, "身体警报", 1], [80, 160, "离开创业公司", 1], [260, 170, "values", 0], [170, 260, "照顾自己", 0], [60, 300, "阿哲", 2], [290, 300, "母亲", 2], [170, 360, "北漂第一章", 0]];
+  const edges = [[0, 1], [0, 2], [0, 3], [1, 4], [1, 6], [3, 2], [5, 2], [4, 6]];
+  return `<svg viewBox="0 0 340 420" style="width:100%;flex:1;padding:6px 10px">
+    ${edges.map(([a, b]) => `<line x1="${nodes[a][0]}" y1="${nodes[a][1]}" x2="${nodes[b][0]}" y2="${nodes[b][1]}" stroke="#CFC6B5" stroke-width="1"/>`).join("")}
+    ${nodes.map(n => `<g><circle cx="${n[0]}" cy="${n[1]}" r="${n[3] === 1 ? 9 : 6}" fill="${n[3] === 1 ? "#B2462E" : n[3] === 2 ? "#F7F4ED" : "#255A4A"}" stroke="${n[3] === 2 ? "#255A4A" : "none"}" stroke-width="1.5"/>
+      <text x="${n[0]}" y="${n[1] + 24}" text-anchor="middle" font-family="Songti SC, serif" font-size="12" fill="#1E2320">${n[2]}</text></g>`).join("")}
+  </svg>`;
+}
+
+function inbox() {
+  return bar(`<div class="tabs"><button class="on">速记</button><button>已归档</button></div><span class="sp"></span><button class="pill">${I("sparkle", 12)} 让 AI 整理入库</button>`) + `
+  <div class="scroll"><div class="journal">
+    <div class="kicker">99-收件箱 / inbox.md</div>
+    <h2 class="title">此刻，你在想什么？</h2>
+    <p class="sub">10 秒捕捉一个念头或情绪。之后在周期反思里一键整理入库。</p>
+    <div class="moods">${D.moods.map(m => `<button class="${S.mood === m ? "on" : ""}" onclick="S.mood='${m}';render()">${m}</button>`).join("")}<button>＋ 自定义</button></div>
+    <textarea class="lined" placeholder="记下此刻的感受、发生的小事，或脑海里闪过的一个念头…"></textarea>
+    <div class="jrow">追加保存至本地 99-收件箱/inbox.md · 自动同步 iCloud<button class="send" style="margin-left:auto">存入收件箱 <span class="kbd">⌘↩</span></button></div>
+    <div class="entries">
+      <h6>收件箱记录 · ${D.inbox.length} 条<button>整理收件箱与周期反思 →</button></h6>
+      ${D.inbox.map(e => `<div class="entry"><time>${e.time}</time><span class="md">${e.mood}</span><p>${e.text}</p></div>`).join("")}
+    </div>
+  </div></div>`;
+}
+
+function settings() {
+  return bar(`<div class="tabs"><button class="on">连接与模型</button><button>记忆与索引</button><button>隐私</button><button>版本快照</button></div>`) + `
+  <div class="scroll"><div class="set">
+    <div class="kicker">模型与设置</div>
+    <h2 class="title">连接与模型</h2>
+    <div class="group"><h5>后端连接<small>决定记忆库和推理在哪里运行。</small></h5>
+      <div class="opts">
+        <button class="opt on"><b>${I("desktop", 15)} App 内置后端</b>随开随启，直读本机 iCloud 记忆，无需后台常驻。</button>
+        <button class="opt"><b>${I("cloud", 15)} 远程 VPS</b>24/7 常驻云端，与手机端、ChatGPT MCP 共享同一记忆库。</button>
+      </div></div>
+    <div class="group"><h5>模型预设<small>当前对话使用的模型，可在对话页快速切换。</small></h5>
+      <div class="rows">${D.providers.map((p, i) => `<div><span class="dot" style="background:${p.ok ? "#3C8A5E" : "#C38A2E"};box-shadow:none"></span>${p.name}<small>${p.model}</small><span class="r">${p.ok ? (i === 0 ? "使用中" : "已授权") : "未填 Key"}<button class="btn">${i === 0 ? "重新授权" : "配置"}</button></span></div>`).join("")}</div></div>
+    <div class="group"><h5>隐私<small>sensitive 记忆与 &lt;private&gt; 块会在发往云端前剥离。</small></h5>
+      <div class="rows">
+        <div>默认拦截敏感记忆<span class="r"><span class="tog on"></span></span></div>
+        <div>每次写入自动 Git 快照<span class="r"><span class="tog on"></span></span></div>
+        <div>核心自我变更强制展示 Diff<span class="r"><span class="tog on"></span></span></div>
+      </div></div>
+  </div></div>`;
+}
+
+function render() {
+  document.getElementById("side").innerHTML = side();
+  document.getElementById("main").innerHTML = { chat, memories, inbox, settings }[S.section]();
+}
+function go(s) { S.section = s; render(); }
+function openSess(id) { S.section = "chat"; S.session = id; S.mode = D.sessions.find(s => s.id === id).mode; render(); }
+document.addEventListener("keydown", e => { if (e.metaKey && "1234".includes(e.key)) { e.preventDefault(); go(D.sections[+e.key - 1].id); } });
+render();
+</script>
+</body>
+</html>

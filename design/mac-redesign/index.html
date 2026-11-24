@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>成长决策顾问 · Mac 端界面三选一</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #141615; color: #E9E7E1; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+  header { flex: none; display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid #262B29; }
+  header h1 { font-size: 14px; font-weight: 600; white-space: nowrap; }
+  header h1 small { color: #7D847F; font-weight: 400; margin-left: 8px; }
+  nav { display: flex; gap: 6px; margin-left: auto; }
+  nav button { font: inherit; cursor: pointer; border: 1px solid #2E3532; background: #1B1F1E; color: #A3A9A4; border-radius: 10px; padding: 7px 14px; text-align: left; display: flex; gap: 10px; align-items: center; }
+  nav button:hover { color: #E9E7E1; border-color: #3B433F; }
+  nav button.on { background: #E9E7E1; color: #141615; border-color: #E9E7E1; }
+  nav button b { font-size: 13px; display: block; }
+  nav button small { font-size: 11px; opacity: .75; }
+  nav button kbd { font: 10.5px "SF Mono", monospace; opacity: .6; }
+  .sw { width: 22px; height: 22px; border-radius: 6px; flex: none; }
+  .desc { flex: none; padding: 9px 20px; font-size: 12.5px; color: #A3A9A4; border-bottom: 1px solid #262B29; display: flex; gap: 22px; flex-wrap: wrap; }
+  .desc b { color: #E9E7E1; font-weight: 600; margin-right: 6px; }
+  iframe { flex: 1; border: 0; width: 100%; }
+</style>
+</head>
+<body>
+<header>
+  <h1>成长决策顾问 · Mac 端重设计<small>三种风格 · 可点击交互 · 按 1 / 2 / 3 切换</small></h1>
+  <nav id="nav"></nav>
+</header>
+<div class="desc" id="desc"></div>
+<iframe id="frame"></iframe>
+<script>
+const styles = [
+  { file: "style-a-paper.html", name: "A · 纸墨", sub: "Editorial 纸感", sw: "linear-gradient(135deg,#F7F4ED 50%,#255A4A 50%)",
+    points: [["气质", "像一本私人决策手记：宋体正文、页边批注、朱红印章色点睛"], ["对话", "去气泡化，顾问回答按「事实 / 教训 / 反方 / 价值判断」排版，引用记忆作为页边脚注"], ["适合", "沿用现有 Forest Ink 品牌，改动最小、最“有温度”"]] },
+  { file: "style-b-glass.html", name: "B · 玻璃", sub: "macOS 原生 Liquid Glass", sw: "linear-gradient(135deg,#9FD3BE,#B9C9F0 55%,#F3D3B3)",
+    points: [["气质", "贴近 macOS Tahoe：悬浮半透明侧栏、胶囊工具栏、系统级分段控件"], ["对话", "气泡 + 彩色语义标签；右侧检查器集中放检索上下文、引用相似度、9 步清单"], ["适合", "最像苹果自家 App，SwiftUI 原生控件即可实现，落地成本最低"]] },
+  { file: "style-c-night.html", name: "C · 夜航", sub: "深色 · 专注 · 命令驱动", sw: "linear-gradient(135deg,#0B0D0C 50%,#E9A956 50%)",
+    points: [["气质", "深色高对比，像 Linear / Raycast：图标导航栏 + 列表 + 正文 + 上下文面板"], ["对话", "9 步进度条、可展开的检索 trace、⌘K 命令面板（试试按 ⌘K）"], ["适合", "信息密度最高，情绪走势 / 时间轴 / 图谱常驻右栏，适合重度使用"]] },
+];
+let cur = +(location.hash.slice(1) || 0);
+function show(i) {
+  cur = i; location.hash = i;
+  document.getElementById("frame").src = styles[i].file;
+  document.getElementById("nav").innerHTML = styles.map((s, j) => `<button class="${j === i ? "on" : ""}" onclick="show(${j})"><span class="sw" style="background:${s.sw}"></span><span><b>${s.name}</b><small>${s.sub}</small></span><kbd>${j + 1}</kbd></button>`).join("");
+  document.getElementById("desc").innerHTML = styles[i].points.map(p => `<span><b>${p[0]}</b>${p[1]}</span>`).join("");
+}
+document.addEventListener("keydown", e => { if (!e.metaKey && "123".includes(e.key)) show(+e.key - 1); });
+show(cur);
+</script>
+</body>
+</html>

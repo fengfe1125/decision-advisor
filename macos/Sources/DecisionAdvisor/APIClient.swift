@@ -47,13 +47,9 @@ final class APIClient: Sendable {
     }
 
     static func readSeedAccessToken() -> String {
-        let fm = FileManager.default
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("DecisionAdvisor/local-data/config.local.json")
         let candidates: [URL] = [
-            appSupport,
             URL(fileURLWithPath: "/Volumes/Developer/个人汇总/apps/decision-advisor/config.local.json"),
-        ].compactMap { $0 }
+        ]
 
         for url in candidates {
             if let data = try? Data(contentsOf: url),

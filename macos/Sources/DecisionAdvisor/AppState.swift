@@ -8,33 +8,23 @@ final class AppState {
     var selectedSection: AdvisorSection = .chat
     var settingsPreferredTab: String = "models"
     var isSidebarVisible: Bool = true
+    var isInspectorVisible: Bool = true
     var isOnline: Bool = false
     var statusBanner: String? = nil
 
-    // Backend Connection & Embedded Engine
-    var backendMode: BackendMode
+    // Remote Server Connection
     var remoteServerURL: String
     var remoteAccessToken: String
-    let embeddedBackend = EmbeddedBackendManager.shared
-    var isSwitchingBackend: Bool = false
     var isTestingRemoteConnection: Bool = false
     var isBackingUpVault: Bool = false
 
     private enum PrefKeys {
-        static let backendMode = "da.backend_mode"
         static let remoteURL = "da.remote_server_url"
         static let remoteToken = "da.remote_access_token"
     }
 
     init() {
         let defaults = UserDefaults.standard
-        if let rawMode = defaults.string(forKey: PrefKeys.backendMode),
-           let parsed = BackendMode(rawValue: rawMode) {
-            self.backendMode = parsed
-        } else {
-            self.backendMode = .remoteVPS
-        }
-
         let savedURL = defaults.string(forKey: PrefKeys.remoteURL)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.remoteServerURL = savedURL.isEmpty ? APIClient.defaultRemoteURL : savedURL
 
@@ -50,23 +40,12 @@ final class AppState {
     }
 
     var activeBaseURL: String {
-        switch backendMode {
-        case .remoteVPS:
-            let cleaned = remoteServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            return cleaned.isEmpty ? APIClient.defaultRemoteURL : cleaned
-        case .embeddedLocal:
-            return embeddedBackend.baseURL
-        }
+        let cleaned = remoteServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? APIClient.defaultRemoteURL : cleaned
     }
 
     var activeAccessToken: String {
-        switch backendMode {
-        case .remoteVPS:
-            return remoteAccessToken
-        case .embeddedLocal:
-            let localTok = embeddedBackend.readEmbeddedAccessToken()
-            return localTok.isEmpty ? remoteAccessToken : localTok
-        }
+        remoteAccessToken
     }
 
     var localICloudVaultPath: String {
@@ -153,42 +132,9 @@ final class AppState {
     }
 
     func bootstrap() async {
-        if backendMode == .embeddedLocal {
-            do {
-                try await embeddedBackend.startIfNeeded()
-            } catch {
-                self.isOnline = false
-                self.showBanner("内置引擎启动失败：\(error.localizedDescription)")
-                return
-            }
-        } else {
-            embeddedBackend.stopSync()
-        }
-
         await refreshHealthAndConfig()
         await refreshSessions()
         await refreshMemories()
-    }
-
-    func switchBackendMode(_ newMode: BackendMode) async {
-        guard !isSwitchingBackend else { return }
-        isSwitchingBackend = true
-        defer { isSwitchingBackend = false }
-
-        backendMode = newMode
-        UserDefaults.standard.set(newMode.rawValue, forKey: PrefKeys.backendMode)
-
-        // Reset session/selection state to avoid mixing remote and local IDs
-        currentSessionId = nil
-        messages = []
-        selectedMemoryPath = nil
-        currentMemoryDetail = nil
-        isEditingMemory = false
-
-        await bootstrap()
-        if isOnline {
-            showBanner("✅ 已切换至「\(newMode.label)」")
-        }
     }
 
     func saveRemoteConnection(url: String, token: String) async {
@@ -196,18 +142,23 @@ final class AppState {
         let finalURL = cleanedURL.isEmpty ? APIClient.defaultRemoteURL : cleanedURL
         let cleanedTok = token.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let urlChanged = finalURL != remoteServerURL
         remoteServerURL = finalURL
         remoteAccessToken = cleanedTok
         UserDefaults.standard.set(finalURL, forKey: PrefKeys.remoteURL)
         UserDefaults.standard.set(cleanedTok, forKey: PrefKeys.remoteToken)
 
-        if backendMode == .remoteVPS {
-            await bootstrap()
-            if isOnline {
-                showBanner("✅ 已连接远程 VPS：\(finalURL)")
-            }
-        } else {
-            showBanner("已保存远程服务器配置")
+        if urlChanged {
+            currentSessionId = nil
+            messages = []
+            selectedMemoryPath = nil
+            currentMemoryDetail = nil
+            isEditingMemory = false
+        }
+
+        await bootstrap()
+        if isOnline {
+            showBanner("✅ 已连接远程服务器：\(finalURL)")
         }
     }
 
@@ -227,20 +178,6 @@ final class AppState {
             showBanner("✅ 远程 VPS 校验通过（v\(ver) · \(ms)ms）")
         } catch {
             showBanner("❌ 远程连接校验失败：\(error.localizedDescription)")
-        }
-    }
-
-    func restartEmbeddedBackend() async {
-        do {
-            try await embeddedBackend.restart()
-            if backendMode == .embeddedLocal {
-                await refreshHealthAndConfig()
-                await refreshSessions()
-                await refreshMemories()
-            }
-            showBanner("✅ App 内置引擎已重启")
-        } catch {
-            showBanner("❌ 重启失败：\(error.localizedDescription)")
         }
     }
 
@@ -531,7 +468,7 @@ final class AppState {
         guard let detail = currentMemoryDetail else { return }
         do {
             try await api.saveMemoryFile(path: detail.path, content: editorText)
-            showBanner(backendMode == .remoteVPS ? "已保存到 VPS 云端并刷新索引与快照" : "已保存到本地 iCloud 并刷新索引与快照")
+            showBanner("已保存到 VPS 云端并刷新索引与快照")
             await openMemory(path: detail.path)
             await refreshMemories()
             await refreshHealthAndConfig()
@@ -627,10 +564,8 @@ final class AppState {
         do {
             let updated = try await api.saveConfig(payload)
             if let tok = newAccessToken?.trimmingCharacters(in: .whitespacesAndNewlines), !tok.isEmpty {
-                if backendMode == .remoteVPS {
-                    remoteAccessToken = tok
-                    UserDefaults.standard.set(tok, forKey: PrefKeys.remoteToken)
-                }
+                remoteAccessToken = tok
+                UserDefaults.standard.set(tok, forKey: PrefKeys.remoteToken)
             }
             self.config = updated
             self.selectedProviderId = updated.activeProviderId
@@ -681,45 +616,43 @@ final class AppState {
         cancelChatGPTLoginWait()
 
         var redirectPort: Int? = nil
-        if backendMode == .remoteVPS {
-            let remoteClient = self.api
-            do {
-                let port = try await oauthCallbackCatcher.start { [weak self] callbackURL in
-                    do {
-                        let res = try await remoteClient.completeChatGPTOAuthCallback(callbackUrl: callbackURL)
-                        await MainActor.run {
-                            guard let self else { return }
-                            self.config = res.config
-                            self.selectedProviderId = res.config.activeProviderId
-                            self.isAwaitingChatGPTCallback = false
-                            self.chatgptPendingState = nil
-                            let count = res.oauth.availableModels.count
-                            let email = res.oauth.accountEmail.isEmpty ? "ChatGPT 账号" : res.oauth.accountEmail
-                            self.showBanner(
-                                count > 0
-                                    ? "✅ \(email) 授权成功，已同步 \(count) 个可用模型"
-                                    : "✅ \(email) 授权成功，可直接调用 GPT 模型"
-                            )
-                        }
-                        let emailText = res.oauth.accountEmail.isEmpty ? "你的 ChatGPT 账号" : res.oauth.accountEmail
-                        return (
-                            true,
-                            "ChatGPT 授权登录成功",
-                            "\(emailText) 已授权完成并同步到你的决策顾问后端，现在可以直接调用订阅额度和模型。"
+        let remoteClient = self.api
+        do {
+            let port = try await oauthCallbackCatcher.start { [weak self] callbackURL in
+                do {
+                    let res = try await remoteClient.completeChatGPTOAuthCallback(callbackUrl: callbackURL)
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.config = res.config
+                        self.selectedProviderId = res.config.activeProviderId
+                        self.isAwaitingChatGPTCallback = false
+                        self.chatgptPendingState = nil
+                        let count = res.oauth.availableModels.count
+                        let email = res.oauth.accountEmail.isEmpty ? "ChatGPT 账号" : res.oauth.accountEmail
+                        self.showBanner(
+                            count > 0
+                                ? "✅ \(email) 授权成功，已同步 \(count) 个可用模型"
+                                : "✅ \(email) 授权成功，可直接调用 GPT 模型"
                         )
-                    } catch {
-                        await MainActor.run {
-                            guard let self else { return }
-                            self.isAwaitingChatGPTCallback = false
-                            self.showBanner("❌ 授权回调处理失败：\(error.localizedDescription)")
-                        }
-                        return (false, "ChatGPT 授权未完成", error.localizedDescription)
                     }
+                    let emailText = res.oauth.accountEmail.isEmpty ? "你的 ChatGPT 账号" : res.oauth.accountEmail
+                    return (
+                        true,
+                        "ChatGPT 授权登录成功",
+                        "\(emailText) 已授权完成并同步到你的决策顾问后端，现在可以直接调用订阅额度和模型。"
+                    )
+                } catch {
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.isAwaitingChatGPTCallback = false
+                        self.showBanner("❌ 授权回调处理失败：\(error.localizedDescription)")
+                    }
+                    return (false, "ChatGPT 授权未完成", error.localizedDescription)
                 }
-                redirectPort = port
-            } catch {
-                showBanner("⚠️ 启动本机回调端口失败，将改用手动粘贴回调链接模式：\(error.localizedDescription)")
             }
+            redirectPort = port
+        } catch {
+            showBanner("⚠️ 启动本机回调端口失败，将改用手动粘贴回调链接模式：\(error.localizedDescription)")
         }
 
         do {

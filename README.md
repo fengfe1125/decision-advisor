@@ -36,16 +36,14 @@
 
 ## v0.12 核心特性
 
-### 1. 原生 macOS 客户端（内置引擎 + 远程 VPS 双模无缝切换）
+### 1. 原生 macOS 客户端（直连 24/7 远程 VPS 统一后端）
 - **原生 SwiftUI + AppKit 架构**：采用静谧森林墨绿（Forest Ink）设计语言，完整适配 macOS 原生窗口质感、深浅色自适应主题、快捷键（`⌘\` 折叠侧边栏、`⌘N` 新建对话）与流式推理思考链折叠展示。
-- **双引擎自由切换**：
-  - **App 内置本地引擎（`embedded_local`）**：打开 App 自动拉起并守护内置 FastAPI 后端（`127.0.0.1:18789`），自动在 `~/Library/Application Support/DecisionAdvisor` 初始化独立 Python 运行时与本地数据目录，零命令行依赖。
-  - **24/7 远程 VPS 引擎（`remote_vps`）**：支持一键切换至云端 HTTPS 服务端，多端实时同步会话历史、记忆图谱与时间轴，并支持**「一键将云端 Markdown 记忆库打包下载回本机 iCloud」**。
+- **桌面与手机端统一云端架构**：macOS 客户端与 iOS 客户端直连同一台 24/7 远程 VPS（`https://decision.sakuramu.edu.kg`），实时共享会话历史、记忆库、图谱与时间轴，彻底避免本地与云端数据分叉；同时保留**「一键将云端 Markdown 记忆库打包下载回本机 iCloud」**备份能力。
 - **四大核心工作区**：
   - **💬 顾问对话**：支持 `日常倾诉 (chat)`、`9 步决策 (decision)`、`冷启动访谈 (interview)`、`周期反思 (reflect)` 四大模式，支持 `as_of` 历史回溯、敏感记忆临时授权开关与一键提炼记忆提案。
   - **📚 记忆与图谱**：按分类、情绪标签、显著性评分（`importance >= 7`）筛选浏览，内置**「人生事件时间轴」**、**「关联图谱关系网」**以及带 Git 原因说明的在线 Markdown 编辑器。
   - **📥 10 秒速记收件箱**：选择此刻心情与一句碎片念头，10 秒落盘至 `99-收件箱/inbox.md`，随时一键转入周期反思整理入库。
-  - **⚙️ 模型与设置**：可视化管理连接模式、ChatGPT 订阅授权登录、5 大类模型预设、向量引擎重建与外置 Git 版本快照历史。
+  - **⚙️ 模型与设置**：可视化管理远程 VPS 地址与密码、ChatGPT 订阅授权登录、5 大类模型预设、向量引擎重建与云端 Git 版本快照历史。
 
 ### 2. 官方合规接入 ChatGPT 订阅额度（OAuth 2.0 PKCE + Remote MCP）
 - **首选 · 官方 Sign in with ChatGPT 授权直连**：
@@ -147,7 +145,7 @@ decision-advisor/
 │   └── config.py              # 本地/远程双模配置管理与凭据脱敏序列化
 ├── macos/
 │   ├── Package.swift          # Swift 6.0 原生 macOS 客户端包定义（macOS 14.0+）
-│   ├── build_app.sh           # 原生 .app 打包脚本（内置 Python 后端 + 图标生成 + LC_BUILD_VERSION 签名安装）
+│   ├── build_app.sh           # 原生 .app 打包脚本（纯远程客户端 + 图标生成 + LC_BUILD_VERSION 签名安装）
 │   ├── Assets/                # 应用主图标（AppIcon.png / SVG）与指南针徽标
 │   └── Sources/DecisionAdvisor/
 │       ├── DecisionAdvisorApp.swift       # 应用入口、原生窗口与快捷键配置
@@ -155,8 +153,7 @@ decision-advisor/
 │       ├── ChatView.swift                 # 流式对话、思考过程折叠、记忆引用胶囊与 Diff 提案确认弹窗
 │       ├── MemoriesView.swift             # 记忆浏览、4 路语义检索、人生时间轴、关系图谱与在线编辑器
 │       ├── InboxView.swift                # 10 秒情绪速记收件箱与近期速记流
-│       ├── SettingsView.swift             # 双模连接切换、ChatGPT OAuth 登录面板、模型预设与索引管理
-│       ├── EmbeddedBackendManager.swift   # App 内置 FastAPI 引擎生命周期与运行时自动供应管理
+│       ├── SettingsView.swift             # 远程 VPS 连接配置、ChatGPT OAuth 登录面板、模型预设与索引管理
 │       ├── LocalOAuthCallbackCatcher.swift# 远程 VPS 模式下的本机 127.0.0.1 OAuth 回调自动捕获器
 │       ├── APIClient.swift                # 异步 HTTP + SSE 流式客户端
 │       ├── AppState.swift                 # 全局响应式状态管理 (@Observable)

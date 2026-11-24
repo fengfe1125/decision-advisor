@@ -23,23 +23,17 @@ struct InboxView: View {
             ZStack {
                 WindowDragHandle()
                 HStack(spacing: 10) {
-                    if !state.isSidebarVisible {
-                        Button {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                                state.isSidebarVisible = true
-                            }
-                        } label: {
-                            Image(systemName: "sidebar.left")
-                                .font(.system(size: 13.5))
-                        }
-                        .buttonStyle(GhostIconButtonStyle(size: 28))
-                        .padding(.leading, Theme.trafficLightClearance - 8)
-                        .help("显示侧边栏 (⌘\\)")
-                    }
+                    SidebarRevealButtons()
 
-                    Text("速记收件箱")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("速记收件箱")
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("99-收件箱/inbox.md")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    .padding(.leading, state.isSidebarVisible ? 10 : 0)
 
                     Spacer()
 
@@ -55,13 +49,10 @@ struct InboxView: View {
                     }
                     .buttonStyle(SubtleOutlineButtonStyle(compact: true))
                 }
-                .padding(.horizontal, 20)
+                .padding(.leading, 14)
+                .padding(.trailing, 16)
             }
             .frame(height: Theme.headerHeight)
-
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.7))
-                .frame(height: 1)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -88,24 +79,27 @@ struct InboxView: View {
                                     Button {
                                         state.inboxMood = isSelected ? "" : mood
                                     } label: {
-                                        HStack(spacing: 5) {
+                                        HStack(spacing: 6) {
                                             Circle()
-                                                .fill(isSelected ? Theme.accent : dotColor.opacity(0.8))
-                                                .frame(width: 6.5, height: 6.5)
+                                                .fill(dotColor.opacity(0.85))
+                                                .frame(width: 14, height: 14)
+                                                .overlay(Circle().strokeBorder(Color.white.opacity(0.6), lineWidth: 1))
                                             Text(mood)
-                                                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                                                .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
                                         }
-                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-                                        .padding(.horizontal, 11)
-                                        .padding(.vertical, 5.5)
+                                        .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+                                        .padding(.leading, 6)
+                                        .padding(.trailing, 12)
+                                        .padding(.vertical, 5)
                                         .background(
                                             Capsule()
-                                                .fill(isSelected ? Theme.accentSoft : Theme.surfaceSubtle.opacity(0.75))
+                                                .fill(isSelected ? Theme.cardSolid : Color.black.opacity(0.04))
                                         )
                                         .overlay(
                                             Capsule()
-                                                .strokeBorder(isSelected ? Theme.accentBorder : .clear, lineWidth: 0.9)
+                                                .strokeBorder(isSelected ? Theme.accent : .clear, lineWidth: 2)
                                         )
+                                        .shadow(color: Theme.accent.opacity(isSelected ? 0.18 : 0), radius: 5, y: 2)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -118,7 +112,7 @@ struct InboxView: View {
                                     .frame(width: 108)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5.5)
-                                    .background(Theme.canvasBg, in: Capsule())
+                                    .background(Color.black.opacity(0.04), in: Capsule())
                                     .overlay(
                                         Capsule()
                                             .strokeBorder(Theme.borderSubtle, lineWidth: 0.85)
@@ -147,19 +141,15 @@ struct InboxView: View {
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 8)
                         }
-                        .background(Theme.canvasBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(isEditorFocused ? Theme.accentBorder : Theme.borderSubtle, lineWidth: isEditorFocused ? 1.1 : 0.85)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(isEditorFocused ? Theme.accentBorder : Color.clear, lineWidth: 1.1)
                         )
 
                         // Bottom Action Bar
                         HStack {
-                            Text(
-                                state.backendMode == .remoteVPS
-                                    ? "追加保存至 VPS 云端 99-收件箱/inbox.md · 与未来手机端互通"
-                                    : "追加保存至本地 99-收件箱/inbox.md · 自动同步 iCloud"
-                            )
+                            Text("追加保存至 VPS 云端 99-收件箱/inbox.md · 与手机端实时互通")
                             .font(.system(size: 11.5))
                             .foregroundStyle(Theme.textTertiary)
 
@@ -175,13 +165,8 @@ struct InboxView: View {
                             .disabled(state.inboxText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
-                    .padding(20)
-                    .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-                    )
-                    .shadow(color: .black.opacity(0.035), radius: 10, y: 3)
+                    .padding(22)
+                    .glassPanel(cornerRadius: 22, tint: Theme.cardBg)
 
                     // Current Inbox Content Card
                     VStack(alignment: .leading, spacing: 14) {
@@ -219,20 +204,16 @@ struct InboxView: View {
                         }
                     }
                     .padding(20)
-                    .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-                    )
+                    .glassCard(cornerRadius: 18)
                 }
                 .frame(maxWidth: 740, alignment: .leading)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 28)
-                .padding(.vertical, 28)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvasBg)
         .task {
             await state.refreshInbox()
         }

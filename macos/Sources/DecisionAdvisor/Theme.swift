@@ -1,126 +1,350 @@
 import AppKit
 import SwiftUI
 
-// MARK: - Adaptive Color Palette ("静谧松林 · 温润纸感")
+// MARK: - Adaptive Color Palette ("白玻璃 · White Glass")
+// 风格 B：macOS 原生 Liquid Glass 质感。亮色模式界面为纯白 + 中性浅灰，
+// 绿色只用于按钮、选中态与强调色。
 
 enum Theme {
-    private static func dynamic(light: (CGFloat, CGFloat, CGFloat), dark: (CGFloat, CGFloat, CGFloat)) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let c = isDark ? dark : light
-            return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1.0)
-        })
+    private static func dynamic(
+        light: (CGFloat, CGFloat, CGFloat),
+        dark: (CGFloat, CGFloat, CGFloat),
+        lightAlpha: CGFloat = 1.0,
+        darkAlpha: CGFloat = 1.0
+    ) -> Color {
+        Color(nsColor: dynamicNSColor(light: light, dark: dark, lightAlpha: lightAlpha, darkAlpha: darkAlpha))
     }
 
-    static func dynamicNSColor(light: (CGFloat, CGFloat, CGFloat), dark: (CGFloat, CGFloat, CGFloat)) -> NSColor {
+    static func dynamicNSColor(
+        light: (CGFloat, CGFloat, CGFloat),
+        dark: (CGFloat, CGFloat, CGFloat),
+        lightAlpha: CGFloat = 1.0,
+        darkAlpha: CGFloat = 1.0
+    ) -> NSColor {
         NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             let c = isDark ? dark : light
-            return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1.0)
+            return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: isDark ? darkAlpha : lightAlpha)
         }
     }
 
     // Surfaces
     static let sidebarBg = dynamic(
-        light: (0.945, 0.935, 0.914),  // #F1EFE9 Warm stone
-        dark:  (0.086, 0.098, 0.094)   // #161918 Deep obsidian moss
+        light: (0.969, 0.973, 0.969), dark: (0.110, 0.141, 0.129),   // #F7F8F7 / #1C2421
+        lightAlpha: 0.92, darkAlpha: 0.62
     )
     static let canvasBg = dynamic(
-        light: (0.980, 0.976, 0.965),  // #FAF9F6 Warm alabaster paper
-        dark:  (0.110, 0.125, 0.120)   // #1C201F Quiet dark slate
+        light: (1.000, 1.000, 1.000),  // #FFFFFF 纯白
+        dark:  (0.071, 0.098, 0.090)   // #121917 深松绿
     )
     static let cardBg = dynamic(
-        light: (1.000, 1.000, 1.000),  // #FFFFFF Crisp card
-        dark:  (0.145, 0.165, 0.157)   // #252A28 Elevated card
+        light: (1.000, 1.000, 1.000), dark: (0.129, 0.165, 0.153),   // 白 / #212A27
+        lightAlpha: 1.0, darkAlpha: 0.82
+    )
+    static let cardSolid = dynamic(
+        light: (1.000, 1.000, 1.000),
+        dark:  (0.145, 0.184, 0.169)   // #252F2B
     )
     static let surfaceSubtle = dynamic(
-        light: (0.929, 0.918, 0.894),  // #EDEAE4 Soft pill track
-        dark:  (0.141, 0.161, 0.153)   // #242927
+        light: (0.945, 0.953, 0.949), dark: (0.149, 0.188, 0.173),   // #F1F3F2 / #26302C
+        lightAlpha: 1.0, darkAlpha: 0.9
     )
     static let hoverFill = dynamic(
-        light: (0.902, 0.890, 0.863),  // #E6E3DC
-        dark:  (0.176, 0.200, 0.192)   // #2D3331
+        light: (0.922, 0.933, 0.929), dark: (0.180, 0.227, 0.208),   // #EBEEED / #2E3A35
+        lightAlpha: 0.9, darkAlpha: 0.9
     )
     static let codeBg = dynamic(
-        light: (0.949, 0.941, 0.922),  // #F2F0EB
-        dark:  (0.098, 0.114, 0.108)   // #191D1C
+        light: (0.965, 0.969, 0.965),  // #F6F7F6
+        dark:  (0.090, 0.118, 0.110)   // #171E1C
     )
 
-    // Hairlines & Borders
+    // Hairlines & Borders (带一点绿的细线)
     static let borderSubtle = dynamic(
-        light: (0.894, 0.878, 0.847),  // #E4E0D8
-        dark:  (0.204, 0.231, 0.220)   // #343B38
+        light: (0.882, 0.894, 0.886), dark: (0.212, 0.263, 0.243),   // #E1E4E2 / #364340
+        lightAlpha: 0.85, darkAlpha: 1.0
     )
     static let borderStrong = dynamic(
-        light: (0.824, 0.804, 0.765),  // #D2CDC3
-        dark:  (0.267, 0.302, 0.286)   // #444D49
+        light: (0.800, 0.816, 0.808),  // #CCD0CE
+        dark:  (0.275, 0.337, 0.314)   // #465650
+    )
+    /// 玻璃面板内描边的高光（亮色模式为白色高光）
+    static let glassEdge = dynamic(
+        light: (1.0, 1.0, 1.0), dark: (1.0, 1.0, 1.0),
+        lightAlpha: 0.85, darkAlpha: 0.08
     )
 
     // Typography
     static let textPrimary = dynamic(
-        light: (0.118, 0.137, 0.125),  // #1E2320 Deep forest ink
-        dark:  (0.925, 0.922, 0.902)   // #ECEBE6 Warm cream ink
+        light: (0.110, 0.122, 0.118),  // #1C1F1E
+        dark:  (0.918, 0.937, 0.925)   // #EAEFEC
     )
     static let textSecondary = dynamic(
-        light: (0.396, 0.404, 0.380),  // #656761
-        dark:  (0.624, 0.647, 0.627)   // #9FA5A0
+        light: (0.373, 0.400, 0.384),  // #5F6662
+        dark:  (0.612, 0.667, 0.643)   // #9CAAA4
     )
     static let textTertiary = dynamic(
-        light: (0.580, 0.584, 0.557),  // #94958E
-        dark:  (0.435, 0.459, 0.443)   // #6F7571
+        light: (0.608, 0.631, 0.616),  // #9BA19D
+        dark:  (0.431, 0.490, 0.463)   // #6E7D76
     )
 
-    // Brand Accent — Deep Spruce Green (matches AppIcon)
+    // Brand Accent — 按钮绿（白底上的清爽绿色）
     static let accent = dynamic(
-        light: (0.145, 0.353, 0.290),  // #255A4A
-        dark:  (0.314, 0.659, 0.557)   // #50A88E
+        light: (0.420, 0.784, 0.608),  // #6BC89B 淡绿（图标、开关、选中描边）
+        dark:  (0.420, 0.800, 0.670)   // #6BCCAB
     )
     static let accentHover = dynamic(
-        light: (0.114, 0.290, 0.235),  // #1D4A3C
-        dark:  (0.388, 0.733, 0.627)   // #63BBA0
+        light: (0.690, 0.890, 0.788),  // #B0E3C9 淡绿按钮悬停
+        dark:  (0.500, 0.850, 0.730)
+    )
+    static let accentLight = dynamic(
+        light: (0.835, 0.957, 0.894),  // #D5F4E4 淡绿按钮上沿
+        dark:  (0.361, 0.690, 0.580)
+    )
+    /// 浅底上的绿色文字（选中项、标签），比 accent 略深以保证可读性
+    static let accentInk = dynamic(
+        light: (0.165, 0.478, 0.333),  // #2A7A55 淡绿底上的深绿字
+        dark:  (0.620, 0.890, 0.790)   // #9EE3C9
     )
     static let accentSoft = dynamic(
-        light: (0.882, 0.933, 0.914),  // #E1EEE9
-        dark:  (0.129, 0.220, 0.192)   // #213831
+        light: (0.420, 0.784, 0.608), dark: (0.420, 0.800, 0.670),
+        lightAlpha: 0.10, darkAlpha: 0.15
     )
     static let accentBorder = dynamic(
-        light: (0.694, 0.824, 0.776),  // #B1D2C6
-        dark:  (0.204, 0.365, 0.314)   // #345D50
+        light: (0.420, 0.784, 0.608), dark: (0.420, 0.800, 0.670),
+        lightAlpha: 0.35, darkAlpha: 0.40
     )
+    /// 选中态的淡绿填充（侧边栏菜单、筛选胶囊等）
+    static let selectionFill = dynamic(
+        light: (0.922, 0.973, 0.945),  // #EBF8F1
+        dark:  (0.153, 0.282, 0.239)   // #27483D
+    )
+    /// 用户消息气泡：浅薄荷底 + 深绿字
     static let userBubble = dynamic(
-        light: (0.157, 0.365, 0.302),  // #285D4D
-        dark:  (0.176, 0.392, 0.325)   // #2D6453
+        light: (0.906, 0.969, 0.937),  // #E7F7EF
+        dark:  (0.165, 0.329, 0.275)   // #2A5446
     )
+    static let userBubbleText = dynamic(
+        light: (0.137, 0.290, 0.220),  // #234A38
+        dark:  (0.918, 0.965, 0.945)
+    )
+    /// 按钮下沿的淡绿
+    static let accentPastel = dynamic(
+        light: (0.741, 0.910, 0.824),  // #BDE8D2
+        dark:  (0.290, 0.659, 0.537)
+    )
+    /// 按钮文字/图标颜色（亮色模式深绿，深色模式白）
+    static let onAccent = dynamic(
+        light: (0.165, 0.478, 0.333),  // #2A7A55
+        dark:  (1.0, 1.0, 1.0)
+    )
+    /// 主按钮的渐变（淡淡的薄荷绿）
+    static var accentGradient: LinearGradient {
+        LinearGradient(colors: [accentLight, accentPastel], startPoint: .top, endPoint: .bottom)
+    }
 
     // Semantic
     static let success = dynamic(
-        light: (0.165, 0.533, 0.361),  // #2A885C
-        dark:  (0.325, 0.745, 0.545)   // #53BE8B
+        light: (0.165, 0.600, 0.400),  // #2A9966
+        dark:  (0.325, 0.780, 0.560)
     )
     static let successSoft = dynamic(
-        light: (0.894, 0.957, 0.922),
-        dark:  (0.125, 0.243, 0.184)
+        light: (0.165, 0.600, 0.400), dark: (0.325, 0.780, 0.560),
+        lightAlpha: 0.12, darkAlpha: 0.16
     )
     static let warning = dynamic(
-        light: (0.718, 0.435, 0.114),  // #B76F1D
-        dark:  (0.910, 0.643, 0.310)   // #E8A44F
+        light: (0.745, 0.490, 0.090),  // #BE7D17
+        dark:  (0.910, 0.660, 0.330)
     )
     static let warningSoft = dynamic(
-        light: (0.984, 0.945, 0.886),
-        dark:  (0.220, 0.169, 0.098)
+        light: (0.906, 0.627, 0.157), dark: (0.910, 0.660, 0.330),
+        lightAlpha: 0.14, darkAlpha: 0.16
     )
     static let danger = dynamic(
-        light: (0.725, 0.235, 0.227),  // #B93C3A
-        dark:  (0.918, 0.435, 0.427)   // #EA6F6D
+        light: (0.780, 0.255, 0.290),  // #C7414A
+        dark:  (0.918, 0.450, 0.460)
     )
     static let dangerSoft = dynamic(
-        light: (0.988, 0.918, 0.914),
-        dark:  (0.235, 0.122, 0.122)
+        light: (0.780, 0.255, 0.290), dark: (0.918, 0.450, 0.460),
+        lightAlpha: 0.11, darkAlpha: 0.16
     )
 
-    static let headerHeight: CGFloat = 46
+    // 回答结构标签配色（事实 / 推断 / 反方 …）
+    static let tagBlue = dynamic(light: (0.224, 0.345, 0.659), dark: (0.478, 0.627, 0.910))
+    static let tagViolet = dynamic(light: (0.400, 0.275, 0.659), dark: (0.659, 0.580, 0.918))
+    static let tagGold = dynamic(light: (0.541, 0.416, 0.0), dark: (0.890, 0.800, 0.420))
+
+    static let headerHeight: CGFloat = 56
     static let sidebarWidth: CGFloat = 252
+    static let inspectorWidth: CGFloat = 284
+    static let panelInset: CGFloat = 8
+    static let panelRadius: CGFloat = 16
     static let trafficLightClearance: CGFloat = 84
+}
+
+// MARK: - Glass Materials
+
+/// AppKit 原生毛玻璃（behind-window blending），让面板透出桌面与窗口背景。
+struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .sidebar
+    var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
+    }
+}
+
+/// 整个窗口的底：亮色模式纯白；深色模式保留几团极淡的绿色色斑增加景深。
+struct MintBackdrop: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let dark = scheme == .dark
+        ZStack {
+            Theme.canvasBg
+            GeometryReader { geo in
+                let w = geo.size.width
+                let h = geo.size.height
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 0.60, green: 0.85, blue: 0.74).opacity(dark ? 0.10 : 0))
+                        .frame(width: w * 0.62, height: w * 0.62)
+                        .position(x: w * 0.12, y: h * 0.08)
+                    Circle()
+                        .fill(Color(red: 0.70, green: 0.86, blue: 0.86).opacity(dark ? 0.07 : 0))
+                        .frame(width: w * 0.55, height: w * 0.55)
+                        .position(x: w * 0.92, y: h * 0.18)
+                    Circle()
+                        .fill(Color(red: 0.86, green: 0.92, blue: 0.78).opacity(dark ? 0.05 : 0))
+                        .frame(width: w * 0.6, height: w * 0.6)
+                        .position(x: w * 0.72, y: h * 1.02)
+                }
+                .blur(radius: 90)
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
+/// 浮动玻璃面板：毛玻璃 + 淡绿白色调 + 内描边高光 + 柔和投影。
+struct GlassPanelModifier: ViewModifier {
+    var cornerRadius: CGFloat = Theme.panelRadius
+    var tint: Color = Theme.sidebarBg
+    var shadow: Bool = true
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background {
+                ZStack {
+                    VisualEffectBackground(material: .hudWindow, blendingMode: .withinWindow)
+                    tint
+                }
+                .clipShape(shape)
+            }
+            .overlay(shape.strokeBorder(Theme.glassEdge, lineWidth: 1))
+            .overlay(shape.strokeBorder(Color.black.opacity(0.045), lineWidth: 0.5))
+            .shadow(color: Color.black.opacity(shadow ? 0.07 : 0), radius: 14, y: 5)
+    }
+}
+
+/// 轻量玻璃卡片（不使用 NSVisualEffectView，适合列表内大量重复的卡片）。
+struct GlassCardModifier: ViewModifier {
+    var cornerRadius: CGFloat = 14
+    var isSelected: Bool = false
+    var isHovering: Bool = false
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background(shape.fill(isSelected || isHovering ? Theme.cardSolid.opacity(0.94) : Theme.cardBg))
+            .overlay(shape.strokeBorder(Theme.glassEdge, lineWidth: 1))
+            .overlay(
+                shape.strokeBorder(
+                    isSelected ? Theme.accent : Color.black.opacity(0.05),
+                    lineWidth: isSelected ? 2 : 0.5
+                )
+            )
+            .shadow(
+                color: isSelected
+                    ? Theme.accent.opacity(0.18)
+                    : Color.black.opacity(isHovering ? 0.08 : 0.035),
+                radius: isSelected || isHovering ? 12 : 5,
+                y: isSelected || isHovering ? 5 : 2
+            )
+    }
+}
+
+/// 工具栏里的玻璃胶囊（分段控件、模型选择、检查器按钮等）。
+struct GlassCapsuleModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(Capsule().fill(Theme.cardBg))
+            .overlay(Capsule().strokeBorder(Theme.glassEdge, lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Color.black.opacity(0.07), lineWidth: 0.5))
+            .shadow(color: Color.black.opacity(0.07), radius: 8, y: 3)
+    }
+}
+
+extension View {
+    func glassPanel(cornerRadius: CGFloat = Theme.panelRadius, tint: Color = Theme.sidebarBg, shadow: Bool = true) -> some View {
+        modifier(GlassPanelModifier(cornerRadius: cornerRadius, tint: tint, shadow: shadow))
+    }
+
+    func glassCard(cornerRadius: CGFloat = 14, isSelected: Bool = false, isHovering: Bool = false) -> some View {
+        modifier(GlassCardModifier(cornerRadius: cornerRadius, isSelected: isSelected, isHovering: isHovering))
+    }
+
+    func glassCapsule() -> some View {
+        modifier(GlassCapsuleModifier())
+    }
+}
+
+/// 检查器 / 设置里的分组标题
+struct GlassSectionHeader: View {
+    let title: String
+    var trailing: String? = nil
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.textTertiary)
+            Spacer()
+            if let trailing {
+                Text(trailing)
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 3)
+    }
+}
+
+/// 系统设置风格的彩色图标方块
+struct ColorIconTile: View {
+    let systemName: String
+    var color: Color = Theme.accent
+    var size: CGFloat = 26
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.5, weight: .medium))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+                    .fill(LinearGradient(colors: [color.opacity(0.85), color], startPoint: .top, endPoint: .bottom))
+            )
+    }
 }
 
 // MARK: - Brand Emblem ("温润纸感 · 成长双叶与北极星", matches AppIcon.icns)
@@ -320,8 +544,8 @@ struct WindowConfigurator: NSViewRepresentable {
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = false
         window.backgroundColor = Theme.dynamicNSColor(
-            light: (0.980, 0.976, 0.965),
-            dark:  (0.110, 0.125, 0.120)
+            light: (1.0, 1.0, 1.0),
+            dark:  (0.071, 0.098, 0.090)
         )
     }
 }
@@ -341,13 +565,14 @@ struct WindowDragHandle: NSViewRepresentable {
     }
 }
 
-// MARK: - Unified Segmented Pill Control
+// MARK: - Unified Segmented Pill Control (玻璃胶囊分段控件)
 
 struct UnifiedSegmentedControl<Option: Identifiable & Hashable>: View {
     let options: [Option]
     @Binding var selection: Option
     let label: (Option) -> String
     var compact: Bool = false
+    var icon: ((Option) -> String)? = nil
 
     @Namespace private var pillNamespace
     @State private var hovered: Option? = nil
@@ -361,25 +586,30 @@ struct UnifiedSegmentedControl<Option: Identifiable & Hashable>: View {
                         selection = option
                     }
                 } label: {
-                    Text(label(option))
-                        .font(.system(size: compact ? 12 : 12.5, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Theme.textPrimary : (hovered == option ? Theme.textPrimary.opacity(0.85) : Theme.textSecondary))
-                        .padding(.horizontal, compact ? 10 : 12)
-                        .padding(.vertical, compact ? 5 : 6)
-                        .frame(maxWidth: compact ? .infinity : nil)
-                        .background {
-                            if isSelected {
-                                Capsule()
-                                    .fill(Theme.cardBg)
-                                    .shadow(color: .black.opacity(0.07), radius: 3, y: 1)
-                                    .overlay(
-                                        Capsule()
-                                            .strokeBorder(Theme.borderSubtle.opacity(0.8), lineWidth: 0.5)
-                                    )
-                                    .matchedGeometryEffect(id: "active-pill", in: pillNamespace)
-                            }
+                    HStack(spacing: 5) {
+                        if let icon {
+                            Image(systemName: icon(option))
+                                .font(.system(size: compact ? 10.5 : 11.5, weight: .medium))
+                                .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
                         }
-                        .contentShape(Capsule())
+                        Text(label(option))
+                            .font(.system(size: compact ? 12 : 12.5, weight: isSelected ? .semibold : .medium))
+                            .foregroundStyle(isSelected ? Theme.textPrimary : (hovered == option ? Theme.textPrimary.opacity(0.85) : Theme.textSecondary))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, compact ? 10 : 13)
+                    .padding(.vertical, compact ? 5 : 6)
+                    .frame(maxWidth: compact ? .infinity : nil)
+                    .background {
+                        if isSelected {
+                            Capsule()
+                                .fill(Theme.cardSolid)
+                                .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+                                .overlay(Capsule().strokeBorder(Color.black.opacity(0.05), lineWidth: 0.5))
+                                .matchedGeometryEffect(id: "active-pill", in: pillNamespace)
+                        }
+                    }
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .onHover { inside in
@@ -388,11 +618,8 @@ struct UnifiedSegmentedControl<Option: Identifiable & Hashable>: View {
             }
         }
         .padding(3)
-        .background(Theme.surfaceSubtle, in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(Theme.borderSubtle.opacity(0.65), lineWidth: 0.5)
-        )
+        .glassCapsule()
+        .fixedSize(horizontal: !compact, vertical: false)
     }
 }
 
@@ -413,18 +640,22 @@ struct SprucePrimaryButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: compact ? 12.5 : 13, weight: .medium))
-                .foregroundStyle(Color.white.opacity(isEnabled ? 1.0 : 0.72))
-                .padding(.horizontal, compact ? 12 : 16)
+                .font(.system(size: compact ? 12.5 : 13, weight: .semibold))
+                .foregroundStyle(Theme.onAccent.opacity(isEnabled ? 1.0 : 0.6))
+                .padding(.horizontal, compact ? 13 : 17)
                 .padding(.vertical, compact ? 6 : 8)
                 .background(
-                    RoundedRectangle(cornerRadius: compact ? 8 : 10, style: .continuous)
+                    Capsule()
                         .fill(
                             !isEnabled
-                            ? Theme.accent.opacity(0.38)
-                            : (configuration.isPressed || isHovering ? Theme.accentHover : Theme.accent)
+                            ? AnyShapeStyle(Theme.accentSoft)
+                            : (configuration.isPressed || isHovering
+                               ? AnyShapeStyle(Theme.accentHover)
+                               : AnyShapeStyle(Theme.accentGradient))
                         )
                 )
+                .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.25), lineWidth: 0.6))
+                .shadow(color: Theme.accent.opacity(isEnabled ? 0.15 : 0), radius: 5, y: 2)
                 .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
                 .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
                 .onHover { isHovering = $0 }
@@ -455,23 +686,24 @@ struct SubtleOutlineButtonStyle: ButtonStyle {
                     ? Theme.textTertiary
                     : (isActive ? Theme.accent : Theme.textPrimary)
                 )
-                .padding(.horizontal, compact ? 10 : 13)
+                .padding(.horizontal, compact ? 11 : 14)
                 .padding(.vertical, compact ? 5.5 : 7)
                 .background(
-                    RoundedRectangle(cornerRadius: compact ? 8 : 9, style: .continuous)
+                    Capsule()
                         .fill(
                             isActive
                             ? Theme.accentSoft
-                            : (configuration.isPressed || isHovering ? Theme.hoverFill.opacity(0.75) : Theme.cardBg)
+                            : (configuration.isPressed || isHovering ? Theme.cardSolid : Theme.cardBg)
                         )
                 )
+                .overlay(Capsule().strokeBorder(Theme.glassEdge, lineWidth: 1))
                 .overlay(
-                    RoundedRectangle(cornerRadius: compact ? 8 : 9, style: .continuous)
-                        .strokeBorder(
-                            isActive ? Theme.accentBorder : Theme.borderSubtle,
-                            lineWidth: 0.9
-                        )
+                    Capsule().strokeBorder(
+                        isActive ? Theme.accentBorder : Color.black.opacity(0.08),
+                        lineWidth: isActive ? 0.9 : 0.5
+                    )
                 )
+                .shadow(color: Color.black.opacity(0.06), radius: 4, y: 1.5)
                 .opacity(isEnabled ? 1.0 : 0.6)
                 .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
                 .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
@@ -499,14 +731,14 @@ struct GhostIconButtonStyle: ButtonStyle {
                 .frame(width: size, height: size)
                 .foregroundStyle(isActive ? Theme.accent : (isHovering ? Theme.textPrimary : Theme.textSecondary))
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    Capsule()
                         .fill(
                             isActive
                             ? Theme.accentSoft
-                            : (configuration.isPressed || isHovering ? Theme.hoverFill.opacity(0.75) : .clear)
+                            : (configuration.isPressed || isHovering ? Theme.hoverFill.opacity(0.8) : .clear)
                         )
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(Capsule())
                 .onHover { isHovering = $0 }
         }
     }
@@ -528,9 +760,9 @@ struct UnifiedFieldBox<Content: View>: View {
             .foregroundStyle(Theme.textPrimary)
             .padding(.horizontal, 10)
             .frame(minHeight: 30)
-            .background(Theme.canvasBg, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(Theme.cardSolid.opacity(0.7), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
             )
     }

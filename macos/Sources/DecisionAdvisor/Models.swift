@@ -1,40 +1,5 @@
 import Foundation
 
-enum BackendMode: String, CaseIterable, Identifiable, Sendable {
-    case remoteVPS = "remote_vps"
-    case embeddedLocal = "embedded_local"
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .remoteVPS: return "远程 VPS 后端"
-        case .embeddedLocal: return "App 内置后端"
-        }
-    }
-
-    var shortBadge: String {
-        switch self {
-        case .remoteVPS: return "VPS 远程"
-        case .embeddedLocal: return "App 内置"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .remoteVPS: return "icloud"
-        case .embeddedLocal: return "desktopcomputer"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .remoteVPS: return "24/7 常驻云端，与未来手机 App 及 ChatGPT MCP 实时共享同一记忆库"
-        case .embeddedLocal: return "后端整合在 App 内部，随开随启、直读本机 iCloud 记忆，无需后台常驻服务"
-        }
-    }
-}
-
 enum AdvisorSection: String, CaseIterable, Identifiable, Sendable {
     case chat = "顾问对话"
     case memories = "记忆库"

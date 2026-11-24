@@ -13,19 +13,7 @@ struct MemoriesView: View {
                 ZStack {
                     WindowDragHandle()
                     HStack(spacing: 8) {
-                        if !state.isSidebarVisible {
-                            Button {
-                                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                                    state.isSidebarVisible = true
-                                }
-                            } label: {
-                                Image(systemName: "sidebar.left")
-                                    .font(.system(size: 13.5))
-                            }
-                            .buttonStyle(GhostIconButtonStyle(size: 28))
-                            .padding(.leading, Theme.trafficLightClearance - 8)
-                            .help("显示侧边栏 (⌘\\)")
-                        }
+                        SidebarRevealButtons()
 
                         UnifiedSegmentedControl(
                             options: MemoryViewMode.allCases,
@@ -40,10 +28,6 @@ struct MemoriesView: View {
                     .padding(.horizontal, 12)
                 }
                 .frame(height: Theme.headerHeight)
-
-                Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.7))
-                    .frame(height: 1)
 
                 // Search & Filters (List / Semantic)
                 if state.memoryViewMode == .list || state.memoryViewMode == .semantic {
@@ -83,13 +67,9 @@ struct MemoriesView: View {
                                 .buttonStyle(SprucePrimaryButtonStyle(compact: true))
                             }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-                        )
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .glassCard(cornerRadius: 11)
 
                         if state.memoryViewMode == .list {
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -132,11 +112,8 @@ struct MemoriesView: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-
-                    Rectangle()
-                        .fill(Theme.borderSubtle.opacity(0.6))
-                        .frame(height: 1)
+                    .padding(.top, 2)
+                    .padding(.bottom, 8)
                 }
 
                 // Content List per View Mode
@@ -152,17 +129,14 @@ struct MemoriesView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(width: state.isSidebarVisible ? 336 : 368)
-            .background(Theme.sidebarBg.opacity(0.45))
-
-            Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(width: 1)
+            .frame(width: state.isSidebarVisible ? 340 : 372)
+            .glassPanel()
+            .padding(.leading, Theme.panelInset)
+            .padding(.vertical, Theme.panelInset)
 
             // MARK: Right Column — Reader & Native Markdown Editor
             MemoryReaderPane()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.canvasBg)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -180,17 +154,18 @@ private struct FilterPillButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? Theme.accent : (isHovering ? Theme.textPrimary : Theme.textSecondary))
+                .foregroundStyle(isSelected ? Theme.accentInk : (isHovering ? Theme.textPrimary : Theme.textSecondary))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4.5)
                 .background(
                     Capsule()
-                        .fill(isSelected ? Theme.accentSoft : (isHovering ? Theme.hoverFill.opacity(0.7) : Theme.cardBg))
+                        .fill(isSelected ? AnyShapeStyle(Theme.selectionFill) : AnyShapeStyle(isHovering ? Theme.cardSolid : Theme.cardBg))
                 )
                 .overlay(
                     Capsule()
-                        .strokeBorder(isSelected ? Theme.accentBorder : Theme.borderSubtle, lineWidth: 0.8)
+                        .strokeBorder(isSelected ? Color.clear : Color.black.opacity(0.06), lineWidth: 0.5)
                 )
+                .shadow(color: Theme.accent.opacity(isSelected ? 0.1 : 0), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -213,7 +188,7 @@ private struct MemoryCardsListView: View {
             )
         } else {
             ScrollView {
-                LazyVStack(spacing: 6) {
+                LazyVStack(spacing: 8) {
                     ForEach(state.memories) { item in
                         MemoryListCard(
                             item: item,
@@ -299,23 +274,9 @@ private struct MemoryListCard: View {
                 .foregroundStyle(Theme.textTertiary)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(
-                        isSelected
-                        ? Theme.accentSoft.opacity(0.85)
-                        : (isHovering ? Theme.cardBg : Theme.cardBg.opacity(0.65))
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? Theme.accentBorder : (isHovering ? Theme.borderStrong.opacity(0.7) : Theme.borderSubtle.opacity(0.75)),
-                        lineWidth: isSelected ? 1 : 0.75
-                    )
-            )
+            .glassCard(cornerRadius: 13, isSelected: isSelected, isHovering: isHovering)
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -419,18 +380,7 @@ private struct TimelineRowCard: View {
                 .padding(.horizontal, 11)
                 .padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(
-                            isSelected
-                            ? Theme.accentSoft.opacity(0.85)
-                            : (isHovering ? Theme.cardBg : Theme.cardBg.opacity(0.6))
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(isSelected ? Theme.accentBorder : Theme.borderSubtle.opacity(0.75), lineWidth: 0.8)
-                )
+                .glassCard(cornerRadius: 12, isSelected: isSelected, isHovering: isHovering)
                 .padding(.bottom, 10)
             }
         }
@@ -665,9 +615,9 @@ private struct MemoryReaderPane: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4.5)
-                        .background(Theme.surfaceSubtle.opacity(0.75), in: Capsule())
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 6)
+                        .glassCapsule()
 
                         if detail.privacy == "sensitive" {
                             HStack(spacing: 4) {
@@ -724,10 +674,6 @@ private struct MemoryReaderPane: View {
             }
             .frame(height: Theme.headerHeight)
 
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.7))
-                .frame(height: 1)
-
             // Main Reader or Editor Body
             if let detail = state.currentMemoryDetail {
                 if state.isEditingMemory {
@@ -739,7 +685,9 @@ private struct MemoryReaderPane: View {
                             .scrollContentBackground(.hidden)
                             .padding(22)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Theme.cardBg)
+                            .glassCard(cornerRadius: 16)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 16)
                     }
                 } else {
                     ScrollView {
@@ -778,10 +726,14 @@ private struct MemoryReaderPane: View {
 
                             RichMarkdownView(text: detail.body, fontSize: 15)
                         }
-                        .frame(maxWidth: 740, alignment: .leading)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, 30)
                         .padding(.vertical, 28)
+                        .frame(maxWidth: 780, alignment: .leading)
+                        .glassCard(cornerRadius: 18)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 4)
+                        .padding(.bottom, 24)
                     }
                 }
             } else {

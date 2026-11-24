@@ -7,51 +7,50 @@ struct ContentView: View {
     var body: some View {
         @Bindable var state = state
 
-        HStack(spacing: 0) {
-            if state.isSidebarVisible {
-                UnifiedSidebarView()
-                    .frame(width: Theme.sidebarWidth)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+        ZStack {
+            MintBackdrop()
 
-                Rectangle()
-                    .fill(Theme.borderSubtle)
-                    .frame(width: 1)
-                    .ignoresSafeArea(.all, edges: .top)
-            }
+            HStack(spacing: 0) {
+                if state.isSidebarVisible {
+                    UnifiedSidebarView()
+                        .frame(width: Theme.sidebarWidth)
+                        .glassPanel()
+                        .padding(.leading, Theme.panelInset)
+                        .padding(.vertical, Theme.panelInset)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
 
-            ZStack(alignment: .top) {
-                Theme.canvasBg
-                    .ignoresSafeArea()
+                ZStack(alignment: .top) {
+                    Group {
+                        switch state.selectedSection {
+                        case .chat:
+                            ChatView()
+                        case .memories:
+                            MemoriesView()
+                        case .inbox:
+                            InboxView()
+                        case .settings:
+                            SettingsView()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Group {
-                    switch state.selectedSection {
-                    case .chat:
-                        ChatView()
-                    case .memories:
-                        MemoriesView()
-                    case .inbox:
-                        InboxView()
-                    case .settings:
-                        SettingsView()
+                    if let banner = state.statusBanner {
+                        ToastBannerView(message: banner)
+                            .padding(.top, Theme.headerHeight + 10)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .zIndex(100)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                if let banner = state.statusBanner {
-                    ToastBannerView(message: banner)
-                        .padding(.top, Theme.headerHeight + 10)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .zIndex(100)
-                }
+                .animation(.spring(response: 0.28, dampingFraction: 0.85), value: state.statusBanner)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.spring(response: 0.28, dampingFraction: 0.85), value: state.statusBanner)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvasBg)
         .ignoresSafeArea(.all, edges: .top)
         .tint(Theme.accent)
         .animation(.spring(response: 0.28, dampingFraction: 0.88), value: state.isSidebarVisible)
+        .animation(.spring(response: 0.28, dampingFraction: 0.88), value: state.isInspectorVisible)
         .sheet(isPresented: $state.showProposalSheet) {
             ProposalConfirmationSheet()
                 .environment(state)
@@ -59,7 +58,44 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Unified Left Sidebar
+/// 侧边栏隐藏时，出现在各页面工具栏左侧的“显示侧边栏 / 新建对话”按钮组。
+struct SidebarRevealButtons: View {
+    @Environment(AppState.self) private var state
+    var showNewChat: Bool = false
+
+    var body: some View {
+        if !state.isSidebarVisible {
+            HStack(spacing: 2) {
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                        state.isSidebarVisible = true
+                    }
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 13.5))
+                }
+                .buttonStyle(GhostIconButtonStyle(size: 30))
+                .help("显示侧边栏 (⌘\\)")
+
+                if showNewChat {
+                    Button {
+                        state.startNewChat()
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 13))
+                    }
+                    .buttonStyle(GhostIconButtonStyle(size: 30))
+                    .help("新建对话 (⌘N)")
+                }
+            }
+            .padding(2)
+            .glassCapsule()
+            .padding(.leading, Theme.trafficLightClearance - 14)
+        }
+    }
+}
+
+// MARK: - Floating Glass Sidebar
 
 private struct UnifiedSidebarView: View {
     @Environment(AppState.self) private var state
@@ -67,7 +103,7 @@ private struct UnifiedSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Top Traffic-Light-Aligned Bar
+            // Traffic-light row
             ZStack {
                 WindowDragHandle()
                 HStack(spacing: 8) {
@@ -84,21 +120,21 @@ private struct UnifiedSidebarView: View {
                     .help("隐藏侧边栏 (⌘\\)")
                 }
                 .padding(.leading, Theme.trafficLightClearance)
-                .padding(.trailing, 10)
+                .padding(.trailing, 8)
             }
-            .frame(height: 32)
+            .frame(height: 38)
 
-            // Brand Header
+            // Brand
             HStack(spacing: 10) {
-                CompassEmblem(size: 28)
+                CompassEmblem(size: 30)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text("成长决策顾问")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13.5, weight: .semibold))
                             .foregroundStyle(Theme.textPrimary)
                         if let ver = state.health?.version, !ver.isEmpty {
                             Text("v\(ver)")
-                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .font(.system(size: 10, weight: .semibold).monospacedDigit())
                                 .foregroundStyle(Theme.accent)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -112,44 +148,40 @@ private struct UnifiedSidebarView: View {
                 Spacer()
             }
             .padding(.horizontal, 14)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
+            .padding(.top, 2)
+            .padding(.bottom, 12)
 
-            // Primary New Chat CTA
+            // New chat field-style button
             Button {
                 state.selectedSection = .chat
                 state.startNewChat()
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12.5, weight: .semibold))
+                HStack(spacing: 7) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.accent)
                     Text("新建对话")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(isNewChatHovering ? Theme.textPrimary : Theme.textSecondary)
                     Spacer()
                     Text("⌘N")
                         .font(.system(size: 10.5, weight: .medium).monospaced())
                         .foregroundStyle(Theme.textTertiary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8.5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isNewChatHovering ? Theme.cardBg : Theme.cardBg.opacity(0.86))
+                        .fill(isNewChatHovering ? Theme.cardSolid.opacity(0.9) : Color.black.opacity(0.045))
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(isNewChatHovering ? Theme.accentBorder : Theme.borderSubtle, lineWidth: 0.9)
-                )
-                .shadow(color: .black.opacity(0.03), radius: 3, y: 1)
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .buttonStyle(.plain)
             .onHover { isNewChatHovering = $0 }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
 
-            // Navigation Tabs
+            // Navigation
             VStack(spacing: 2) {
                 ForEach(AdvisorSection.allCases) { section in
                     SidebarNavRow(
@@ -161,30 +193,34 @@ private struct UnifiedSidebarView: View {
                     }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 6)
 
-            // Subtle Divider before Integrated Conversations
-            Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(height: 1)
-                .padding(.horizontal, 14)
-
-            // Integrated Recent Conversations
-            VStack(alignment: .leading, spacing: 6) {
+            // Recent conversations
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("最近对话")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.textTertiary)
-                    Spacer()
                     if !state.sessions.isEmpty {
                         Text("\(state.sessions.count)")
                             .font(.system(size: 10.5, weight: .medium).monospacedDigit())
                             .foregroundStyle(Theme.textTertiary)
                     }
+                    Spacer()
+                    Button {
+                        state.selectedSection = .chat
+                        state.startNewChat()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(GhostIconButtonStyle(size: 22))
+                    .help("新建对话 (⌘N)")
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
+                .padding(.leading, 16)
+                .padding(.trailing, 10)
+                .padding(.top, 10)
 
                 if state.sessions.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -200,7 +236,7 @@ private struct UnifiedSidebarView: View {
                     Spacer()
                 } else {
                     ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 2) {
+                        LazyVStack(spacing: 1) {
                             ForEach(state.sessions) { sess in
                                 SessionSidebarRow(
                                     session: sess,
@@ -215,78 +251,75 @@ private struct UnifiedSidebarView: View {
                                 )
                             }
                         }
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 8)
                         .padding(.bottom, 10)
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Serene Compact Footer
+            // Footer status
             Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(height: 1)
+                .fill(Theme.borderSubtle.opacity(0.7))
+                .frame(height: 0.5)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Button {
                     state.openBackendSettings()
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 7) {
                         Circle()
                             .fill(state.isOnline ? Theme.success : Theme.warning)
                             .frame(width: 7, height: 7)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            HStack(spacing: 4) {
-                                Image(systemName: state.backendMode.icon)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(Theme.accent)
-                                Text(
-                                    state.isOnline
-                                        ? (state.backendMode == .remoteVPS ? "VPS 远程在线" : "内置引擎在线")
-                                        : (state.embeddedBackend.isStarting ? "内置引擎启动中…" : "服务未连接")
-                                )
-                                .font(.system(size: 11.5, weight: .medium))
-                                .foregroundStyle(Theme.textSecondary)
-                                .lineLimit(1)
-                            }
-                            if let stats = state.health?.stats {
-                                let emb = state.health?.index?.embeddedDocs ?? 0
-                                Text("\(stats.total) 记忆 · \(emb) 向量")
-                                    .font(.system(size: 10.5).monospacedDigit())
-                                    .foregroundStyle(Theme.textTertiary)
-                            }
-                        }
+                            .shadow(color: (state.isOnline ? Theme.success : Theme.warning).opacity(0.5), radius: 3)
+                        Text(state.isOnline ? "VPS 远程" : "未连接")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
                     }
-                    .contentShape(Rectangle())
+                    .padding(.leading, 8)
+                    .padding(.trailing, 10)
+                    .padding(.vertical, 5)
+                    .glassCapsule()
+                    .contentShape(Capsule())
+                    .fixedSize()
                 }
                 .buttonStyle(.plain)
-                .help("点击配置远程 VPS 或 App 内置本地后端")
+                .help("点击配置远程 VPS 服务器与备份")
 
-                Spacer()
+                if let stats = state.health?.stats {
+                    let emb = state.health?.index?.embeddedDocs ?? 0
+                    Text("\(stats.total) 记忆 · \(emb) 向量")
+                        .font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(-1)
+                }
+
+                Spacer(minLength: 0)
 
                 Button {
                     NSWorkspace.shared.open(URL(fileURLWithPath: state.localICloudVaultPath))
                 } label: {
                     Image(systemName: "folder")
-                        .font(.system(size: 12.5))
+                        .font(.system(size: 12))
                 }
-                .buttonStyle(GhostIconButtonStyle(size: 26))
-                .help("在访达中打开本机 iCloud 记忆目录")
+                .buttonStyle(GhostIconButtonStyle(size: 24))
+                .help("在访达中打开本机 iCloud 备份目录")
 
                 Button {
                     Task { await state.bootstrap() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12))
+                        .font(.system(size: 11.5))
                 }
-                .buttonStyle(GhostIconButtonStyle(size: 26))
+                .buttonStyle(GhostIconButtonStyle(size: 24))
                 .help("刷新状态与记忆 (⌘R)")
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
         }
-        .background(Theme.sidebarBg)
     }
 }
 
@@ -301,36 +334,32 @@ private struct SidebarNavRow: View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Image(systemName: section.icon)
-                    .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(isSelected ? Theme.accentInk : Theme.accent)
                     .frame(width: 18)
 
                 Text(section.rawValue)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Theme.accent : Theme.textPrimary)
+                    .foregroundStyle(isSelected ? Theme.accentInk : Theme.textPrimary)
 
                 Spacer()
 
                 if let count = badgeCount, count > 0 {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium).monospacedDigit())
-                        .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            Capsule().fill(isSelected ? Theme.accent.opacity(0.12) : Theme.hoverFill.opacity(0.65))
-                        )
+                        .foregroundStyle(isSelected ? Theme.accentInk.opacity(0.8) : Theme.textTertiary)
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 7.5)
+            .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(
                         isSelected
-                        ? Theme.accentSoft
-                        : (isHovering ? Theme.hoverFill.opacity(0.75) : .clear)
+                        ? AnyShapeStyle(Theme.selectionFill)
+                        : AnyShapeStyle(isHovering ? Theme.hoverFill.opacity(0.7) : Color.clear)
                     )
+                    .shadow(color: Theme.accent.opacity(isSelected ? 0.12 : 0), radius: 4, y: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
@@ -347,28 +376,41 @@ private struct SessionSidebarRow: View {
     @State private var isHovering = false
 
     private var shortTime: String {
-        let trimmed = String(session.updatedAt.dropFirst(5).prefix(11))
+        String(session.updatedAt.dropFirst(5).prefix(11))
             .replacingOccurrences(of: "T", with: " ")
-        return trimmed
+    }
+
+    private var mode: ChatMode {
+        ChatMode(rawValue: session.mode) ?? .chat
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Button(action: onSelect) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(session.title.isEmpty ? "未命名对话" : session.title)
-                        .font(.system(size: 12.5, weight: isActive ? .medium : .regular))
-                        .foregroundStyle(isActive ? Theme.accent : Theme.textPrimary)
-                        .lineLimit(1)
+                HStack(spacing: 8) {
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Theme.accent)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Theme.cardSolid.opacity(isActive ? 1 : 0.8))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5)
+                        )
 
-                    HStack(spacing: 5) {
-                        Text("\(session.messageCount) 条")
-                        Text("·")
-                        Text(shortTime)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(session.title.isEmpty ? "未命名对话" : session.title)
+                            .font(.system(size: 12.5, weight: isActive ? .semibold : .regular))
+                            .foregroundStyle(isActive ? Theme.accentInk : Theme.textPrimary)
+                            .lineLimit(1)
+                        Text("\(mode.label) · \(shortTime)")
+                            .font(.system(size: 10.5).monospacedDigit())
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
                     }
-                    .font(.system(size: 10.5).monospacedDigit())
-                    .foregroundStyle(isActive ? Theme.accent.opacity(0.75) : Theme.textTertiary)
-                    .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -378,7 +420,7 @@ private struct SessionSidebarRow: View {
             if isHovering {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
-                        .font(.system(size: 11))
+                        .font(.system(size: 10.5))
                         .foregroundStyle(Theme.textTertiary)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -388,14 +430,14 @@ private struct SessionSidebarRow: View {
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6.5)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(
                     isActive
-                    ? Theme.accentSoft.opacity(0.9)
-                    : (isHovering ? Theme.hoverFill.opacity(0.65) : .clear)
+                    ? Theme.accentSoft
+                    : (isHovering ? Theme.hoverFill.opacity(0.6) : .clear)
                 )
         )
         .onHover { isHovering = $0 }
@@ -442,11 +484,6 @@ private struct ToastBannerView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
-        .background(Theme.cardBg, in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-        )
-        .shadow(color: .black.opacity(0.11), radius: 14, y: 5)
+        .glassPanel(cornerRadius: 20, tint: Theme.cardBg)
     }
 }

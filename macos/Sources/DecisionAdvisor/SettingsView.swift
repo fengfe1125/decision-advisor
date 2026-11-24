@@ -4,7 +4,7 @@ import SwiftUI
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case models = "大模型"
     case index = "语义索引"
-    case backend = "后端与远程"
+    case backend = "远程服务器"
     case snapshots = "版本快照"
 
     var id: String { rawValue }
@@ -57,24 +57,20 @@ struct SettingsView: View {
             ZStack {
                 WindowDragHandle()
                 HStack(spacing: 12) {
-                    if !state.isSidebarVisible {
-                        Button {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                                state.isSidebarVisible = true
-                            }
-                        } label: {
-                            Image(systemName: "sidebar.left")
-                                .font(.system(size: 13.5))
-                        }
-                        .buttonStyle(GhostIconButtonStyle(size: 28))
-                        .padding(.leading, Theme.trafficLightClearance - 8)
-                        .help("显示侧边栏 (⌘\\)")
-                    }
+                    SidebarRevealButtons()
 
                     UnifiedSegmentedControl(
                         options: SettingsTab.allCases,
                         selection: $activeTab,
-                        label: { $0.rawValue }
+                        label: { $0.rawValue },
+                        icon: { tab in
+                            switch tab {
+                            case .models: return "cpu"
+                            case .index: return "sparkle.magnifyingglass"
+                            case .backend: return "server.rack"
+                            case .snapshots: return "clock.arrow.circlepath"
+                            }
+                        }
                     )
 
                     Spacer()
@@ -97,13 +93,10 @@ struct SettingsView: View {
                     .buttonStyle(SprucePrimaryButtonStyle(compact: true))
                     .keyboardShortcut("s", modifiers: .command)
                 }
-                .padding(.horizontal, 18)
+                .padding(.leading, 14)
+                .padding(.trailing, 16)
             }
             .frame(height: Theme.headerHeight)
-
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.7))
-                .frame(height: 1)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -126,7 +119,8 @@ struct SettingsView: View {
                     .frame(maxWidth: 760, alignment: .leading)
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 28)
-                    .padding(.vertical, 26)
+                    .padding(.top, 10)
+                    .padding(.bottom, 26)
                 }
                 .onAppear {
                     proxy.scrollTo("settings-top", anchor: .top)
@@ -137,7 +131,6 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvasBg)
         .onAppear {
             if state.settingsPreferredTab == "backend" {
                 activeTab = .backend
@@ -376,7 +369,7 @@ struct SettingsView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 7)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.canvasBg, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .background(Theme.codeBg, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .strokeBorder(Theme.borderSubtle, lineWidth: 0.8)
@@ -421,7 +414,7 @@ struct SettingsView: View {
                                         .foregroundStyle(selected ? Theme.accent : Theme.textPrimary)
                                         .padding(.horizontal, 9)
                                         .padding(.vertical, 5)
-                                        .background(selected ? Theme.accentSoft : Theme.canvasBg, in: Capsule())
+                                        .background(selected ? Theme.accentSoft : Theme.cardBg, in: Capsule())
                                         .overlay(
                                             Capsule()
                                                 .strokeBorder(selected ? Theme.accentBorder : Theme.borderSubtle, lineWidth: 0.9)
@@ -471,11 +464,7 @@ struct SettingsView: View {
                 }
             }
             .padding(18)
-            .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(connected ? Theme.accentBorder : Theme.borderSubtle, lineWidth: connected ? 1.15 : 0.9)
-            )
+            .glassCard(cornerRadius: 16, isSelected: connected)
         }
     }
 
@@ -649,269 +638,126 @@ struct SettingsView: View {
                     .padding(.top, 4)
                 }
                 .padding(18)
-                .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-                )
+                .glassCard(cornerRadius: 16)
             }
         }
     }
 
-    // MARK: - Tab 3: Backend Architecture, VPS Remote & Mobile API / MCP
+    // MARK: - Tab 3: Remote VPS Server & Mobile API / MCP
 
     private var backendSection: some View {
         VStack(alignment: .leading, spacing: 22) {
-            // Card 1: Backend Mode Switcher
+            // Card 1: Remote VPS Connection & Vault Backup
             SettingsSectionContainer(
-                title: "后端运行模式（App 内置 / VPS 远程）",
-                subtitle: "已告别网页版与 Mac 后台守护进程：可在 24/7 VPS 远程后端（手机端互通）与 App 内置离线引擎之间一键切换"
+                title: "远程 VPS 服务器（桌面与手机端统一后端）",
+                subtitle: "桌面端、iOS 端与 ChatGPT Remote MCP 共享同一云端记忆库与会话记录，不再在本地运行内置后端"
             ) {
-                VStack(spacing: 10) {
-                    ForEach(BackendMode.allCases) { mode in
-                        let isSelected = state.backendMode == mode
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 10) {
+                        IndexMetricTile(label: "连接状态", value: state.isOnline ? "在线" : "未连接", isText: true)
+                        IndexMetricTile(label: "服务版本", value: state.health?.version.map { "v\($0)" } ?? "—", isText: true)
+                        IndexMetricTile(label: "记忆总数", value: state.health.map { "\($0.stats.total) 篇" } ?? "—", isText: true)
+                    }
+
+                    SettingsInlineRow(label: "远程 API 地址") {
+                        UnifiedFieldBox {
+                            TextField("https://decision.sakuramu.edu.kg", text: $remoteURLDraft)
+                        }
+                    }
+
+                    SettingsInlineRow(label: "连接访问密码") {
+                        UnifiedFieldBox {
+                            SecureField("输入 VPS 访问密码 (X-Access-Token)", text: $remoteTokenDraft)
+                        }
+                    }
+
+                    HStack(spacing: 10) {
                         Button {
-                            guard !isSelected else { return }
                             Task {
-                                await state.switchBackendMode(mode)
+                                await state.testRemoteConnection(url: remoteURLDraft, token: remoteTokenDraft)
+                            }
+                        } label: {
+                            if state.isTestingRemoteConnection {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.mini)
+                                    Text("校验中…")
+                                }
+                            } else {
+                                Label("测试远程连接", systemImage: "antenna.radiowaves.left.and.right")
+                            }
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle())
+                        .disabled(state.isTestingRemoteConnection)
+
+                        Button {
+                            Task {
+                                await state.saveRemoteConnection(url: remoteURLDraft, token: remoteTokenDraft)
                                 syncFromConfig()
                             }
                         } label: {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    Circle()
-                                        .strokeBorder(isSelected ? Theme.accent : Theme.borderStrong, lineWidth: 1.8)
-                                        .frame(width: 17, height: 17)
-                                    if isSelected {
-                                        Circle()
-                                            .fill(Theme.accent)
-                                            .frame(width: 9, height: 9)
-                                    }
-                                }
-
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                        .fill(isSelected ? Theme.accent : Theme.surfaceSubtle)
-                                        .frame(width: 34, height: 34)
-                                    Image(systemName: mode.icon)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundStyle(isSelected ? Color.white : Theme.textSecondary)
-                                }
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack(spacing: 7) {
-                                        Text(mode.label)
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundStyle(Theme.textPrimary)
-                                        if mode == .remoteVPS {
-                                            Text("推荐 · 手机互通")
-                                                .font(.system(size: 10.5, weight: .semibold))
-                                                .foregroundStyle(Theme.accent)
-                                                .padding(.horizontal, 7)
-                                                .padding(.vertical, 2)
-                                                .background(Theme.accentSoft, in: Capsule())
-                                        } else {
-                                            Text("离线内置")
-                                                .font(.system(size: 10.5, weight: .medium))
-                                                .foregroundStyle(Theme.textSecondary)
-                                                .padding(.horizontal, 7)
-                                                .padding(.vertical, 2)
-                                                .background(Theme.surfaceSubtle, in: Capsule())
-                                        }
-                                    }
-                                    Text(mode.subtitle)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Theme.textSecondary)
-                                        .multilineTextAlignment(.leading)
-                                }
-
-                                Spacer()
-
-                                if state.isSwitchingBackend && isSelected {
-                                    ProgressView().controlSize(.small)
-                                }
-                            }
-                            .padding(14)
-                            .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .strokeBorder(isSelected ? Theme.accentBorder : Theme.borderSubtle, lineWidth: isSelected ? 1.2 : 0.9)
-                            )
-                            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            Label("应用并重连 VPS", systemImage: "checkmark.icloud")
                         }
-                        .buttonStyle(.plain)
-                        .disabled(state.isSwitchingBackend)
+                        .buttonStyle(SprucePrimaryButtonStyle())
+
+                        Spacer()
+
+                        Button {
+                            Task { await state.backupRemoteVaultToLocalICloud() }
+                        } label: {
+                            if state.isBackingUpVault {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.mini)
+                                    Text("同步备份中…")
+                                }
+                            } else {
+                                Label("备份回本机 iCloud", systemImage: "arrow.down.doc")
+                            }
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle())
+                        .disabled(state.isBackingUpVault || !state.isOnline)
+                        .help("将 VPS 上的纯 Markdown 记忆库打包下载并同步到本地 iCloud 决策目录")
                     }
-                }
-            }
 
-            // Card 2: Mode-Specific Controls
-            if state.backendMode == .remoteVPS {
-                SettingsSectionContainer(
-                    title: "VPS 远程后端与未来手机端连接",
-                    subtitle: "后端直接运行在你的 VPS（systemd 24/7 常驻），未来 iOS/Android App 与 ChatGPT MCP 共用此地址与密码"
-                ) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SettingsInlineRow(label: "远程 API 地址") {
-                            UnifiedFieldBox {
-                                TextField("https://decision.sakuramu.edu.kg", text: $remoteURLDraft)
-                            }
+                    let cleanRemote = remoteURLDraft.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                    let mcpURL = cleanRemote.isEmpty ? "" : "\(cleanRemote)/mcp"
+                    if !mcpURL.isEmpty {
+                        Rectangle().fill(Theme.borderSubtle.opacity(0.65)).frame(height: 1)
+                        CopyableEndpointRow(label: "手机端 API", value: "\(cleanRemote)/api") {
+                            copyToPasteboard("\(cleanRemote)/api", label: "手机端 API 地址")
                         }
-
-                        SettingsInlineRow(label: "连接访问密码") {
-                            UnifiedFieldBox {
-                                SecureField("输入 VPS 访问密码 (X-Access-Token)", text: $remoteTokenDraft)
-                            }
-                        }
-
-                        HStack(spacing: 10) {
-                            Button {
-                                Task {
-                                    await state.testRemoteConnection(url: remoteURLDraft, token: remoteTokenDraft)
-                                }
-                            } label: {
-                                if state.isTestingRemoteConnection {
-                                    HStack(spacing: 6) {
-                                        ProgressView().controlSize(.mini)
-                                        Text("校验中…")
-                                    }
-                                } else {
-                                    Label("测试远程连接", systemImage: "antenna.radiowaves.left.and.right")
-                                }
-                            }
-                            .buttonStyle(SubtleOutlineButtonStyle())
-                            .disabled(state.isTestingRemoteConnection)
-
-                            Button {
-                                Task {
-                                    await state.saveRemoteConnection(url: remoteURLDraft, token: remoteTokenDraft)
-                                    syncFromConfig()
-                                }
-                            } label: {
-                                Label("应用并重连 VPS", systemImage: "checkmark.icloud")
-                            }
-                            .buttonStyle(SprucePrimaryButtonStyle())
-
-                            Spacer()
-
-                            Button {
-                                Task { await state.backupRemoteVaultToLocalICloud() }
-                            } label: {
-                                if state.isBackingUpVault {
-                                    HStack(spacing: 6) {
-                                        ProgressView().controlSize(.mini)
-                                        Text("同步备份中…")
-                                    }
-                                } else {
-                                    Label("备份回本机 iCloud", systemImage: "arrow.down.doc")
-                                }
-                            }
-                            .buttonStyle(SubtleOutlineButtonStyle())
-                            .disabled(state.isBackingUpVault || !state.isOnline)
-                            .help("将 VPS 上的纯 Markdown 记忆库打包下载并同步到本地 iCloud 决策目录")
-                        }
-
-                        let cleanRemote = remoteURLDraft.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                        let mcpURL = cleanRemote.isEmpty ? "" : "\(cleanRemote)/mcp"
-                        if !mcpURL.isEmpty {
-                            Rectangle().fill(Theme.borderSubtle.opacity(0.65)).frame(height: 1)
-                            CopyableEndpointRow(label: "手机端 API", value: "\(cleanRemote)/api") {
-                                copyToPasteboard("\(cleanRemote)/api", label: "手机端 API 地址")
-                            }
-                            CopyableEndpointRow(label: "ChatGPT MCP", value: mcpURL) {
-                                copyToPasteboard(mcpURL, label: "ChatGPT MCP URL")
-                            }
-                        }
-
-                        if !remoteTokenDraft.isEmpty {
-                            Rectangle().fill(Theme.borderSubtle.opacity(0.65)).frame(height: 1)
-                            HStack(spacing: 12) {
-                                Text("当前密码")
-                                    .font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .frame(width: 96, alignment: .leading)
-                                Text("已保存在本机偏好设置（用于直连 VPS 与手机端/ChatGPT 授权）")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Theme.textSecondary)
-                                Spacer()
-                                Button {
-                                    copyToPasteboard(remoteTokenDraft, label: "访问密码")
-                                } label: {
-                                    Label("复制密码", systemImage: "doc.on.doc")
-                                }
-                                .buttonStyle(SubtleOutlineButtonStyle(compact: true))
-                            }
+                        CopyableEndpointRow(label: "ChatGPT MCP", value: mcpURL) {
+                            copyToPasteboard(mcpURL, label: "ChatGPT MCP URL")
                         }
                     }
-                    .padding(18)
-                    .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-                    )
-                }
-            } else {
-                SettingsSectionContainer(
-                    title: "App 内置本地引擎状态",
-                    subtitle: "后端代码已直接打包在 成长决策顾问.app 内部，随 App 启动与退出自动管理生命周期"
-                ) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 10) {
-                            IndexMetricTile(label: "运行状态", value: state.embeddedBackend.isRunning ? "在线" : "未启动", isText: true)
-                            IndexMetricTile(label: "监听端口", value: "127.0.0.1:\(state.embeddedBackend.port)", isText: true)
-                            IndexMetricTile(label: "进程 PID", value: state.embeddedBackend.processPID.map(String.init) ?? "—", isText: true)
-                        }
 
-                        SettingsInlineRow(label: "本地记忆库") {
-                            Text(state.config?.vaultPath ?? state.localICloudVaultPath)
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(Theme.textPrimary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
-                        }
-
-                        SettingsInlineRow(label: "引擎日志文件") {
-                            Text(state.embeddedBackend.logFileURL.path)
-                                .font(.system(size: 11.5, design: .monospaced))
+                    if !remoteTokenDraft.isEmpty {
+                        Rectangle().fill(Theme.borderSubtle.opacity(0.65)).frame(height: 1)
+                        HStack(spacing: 12) {
+                            Text("当前密码")
+                                .font(.system(size: 12.5, weight: .medium))
                                 .foregroundStyle(Theme.textSecondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
-                        }
-
-                        HStack(spacing: 10) {
-                            Button {
-                                Task { await state.restartEmbeddedBackend() }
-                            } label: {
-                                Label("重启内置后端引擎", systemImage: "arrow.clockwise")
-                            }
-                            .buttonStyle(SubtleOutlineButtonStyle())
-
-                            Button {
-                                NSWorkspace.shared.open(state.embeddedBackend.logFileURL.deletingLastPathComponent())
-                            } label: {
-                                Label("打开日志目录", systemImage: "doc.text.magnifyingglass")
-                            }
-                            .buttonStyle(SubtleOutlineButtonStyle())
-
+                                .frame(width: 96, alignment: .leading)
+                            Text("已保存在本机偏好设置（用于直连 VPS 与手机端/ChatGPT 授权）")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.textSecondary)
                             Spacer()
+                            Button {
+                                copyToPasteboard(remoteTokenDraft, label: "访问密码")
+                            } label: {
+                                Label("复制密码", systemImage: "doc.on.doc")
+                            }
+                            .buttonStyle(SubtleOutlineButtonStyle(compact: true))
                         }
-                        .padding(.top, 2)
                     }
-                    .padding(18)
-                    .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-                    )
                 }
+                .padding(18)
+                .glassCard(cornerRadius: 16)
             }
 
-            // Card 3: Server Public Base URL & Access Password Rotation
+            // Card 2: Server Public Base URL & Access Password Rotation
             SettingsSectionContainer(
                 title: "服务端安全与 MCP 元数据",
-                subtitle: "修改当前所连后端的 OAuth 公网域名或访问密码（点击右上角「保存配置」生效）"
+                subtitle: "修改远程后端的 OAuth 公网域名或访问密码（点击右上角「保存配置」生效）"
             ) {
                 VStack(alignment: .leading, spacing: 14) {
                     SettingsInlineRow(label: "公网 HTTPS 域名") {
@@ -927,21 +773,17 @@ struct SettingsView: View {
                     }
                 }
                 .padding(18)
-                .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-                )
+                .glassCard(cornerRadius: 16)
             }
         }
     }
 
-    // MARK: - Tab 4: Local Git Snapshots
+    // MARK: - Tab 4: Remote Git Snapshots
 
     private var snapshotsSection: some View {
         SettingsSectionContainer(
-            title: "外置 Git 自动版本快照",
-            subtitle: "独立保存于本机，不污染 iCloud 同步目录，每次记忆变更自动留档"
+            title: "云端 Git 自动版本快照",
+            subtitle: "由远程服务器外置 .memory-git 自动维护，每次记忆变更自动留档"
         ) {
             VStack(alignment: .leading, spacing: 0) {
                 if state.gitHistory.isEmpty {
@@ -984,11 +826,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle, lineWidth: 0.9)
-            )
+            .glassCard(cornerRadius: 16)
         }
     }
 }
@@ -1219,7 +1057,7 @@ private struct ProviderConfigCard: View {
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
                                             .background(
-                                                selected ? Theme.accentSoft : Theme.canvasBg,
+                                                selected ? Theme.accentSoft : Theme.cardBg,
                                                 in: Capsule()
                                             )
                                             .overlay(
@@ -1255,11 +1093,7 @@ private struct ProviderConfigCard: View {
                 .padding(.vertical, 14)
             }
         }
-        .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(isActive ? Theme.accentBorder : Theme.borderSubtle, lineWidth: isActive ? 1.15 : 0.9)
-        )
+        .glassCard(cornerRadius: 16, isSelected: isActive)
     }
 }
 
@@ -1343,10 +1177,6 @@ private struct IndexMetricTile: View {
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.cardBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.borderSubtle, lineWidth: 0.85)
-        )
+        .glassCard(cornerRadius: 14)
     }
 }

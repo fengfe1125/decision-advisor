@@ -1,66 +1,21 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 方案 C · 叶针罗盘 (Leaf-needle Compass). Source: Figma "Decision Advisor · Logo Redesign" -->
   <defs>
-    <path id="squircleE" d="M383.41 100H640.59C722.19 100 763 100 799.79 113.89C854.88 131.34 892.66 169.12 910.11 224.21C924 261 924 301.81 924 383.41V640.59C924 722.19 924 763 910.11 799.79C892.66 854.88 854.88 892.66 799.79 910.11C763 924 722.19 924 640.59 924H383.41C301.81 924 261 924 224.21 910.11C169.12 892.66 131.34 854.88 113.89 799.79C100 763 100 722.19 100 640.59V383.41C100 301.81 100 261 113.89 224.21C131.34 169.12 169.12 131.34 224.21 113.89C261 100 301.81 100 383.41 100Z"/>
-    <clipPath id="squircleClipE"><use href="#squircleE"/></clipPath>
-    <linearGradient id="paperBgE" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FDFCF8"/>
-      <stop offset="100%" stop-color="#EEEADF"/>
+    <linearGradient id="paperBgC" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBF9F3"/><stop offset="1" stop-color="#ECE5D6"/>
     </linearGradient>
-    <radialGradient id="starGlowE" cx="50%" cy="35%" r="34%">
-      <stop offset="0%" stop-color="#F2C874" stop-opacity="0.34"/>
-      <stop offset="100%" stop-color="#F2C874" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="leftLeafE" x1="250" y1="360" x2="520" y2="780" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#276251"/>
-      <stop offset="100%" stop-color="#143A2F"/>
-    </linearGradient>
-    <linearGradient id="rightLeafE" x1="774" y1="360" x2="500" y2="780" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#3C8770"/>
-      <stop offset="100%" stop-color="#1D4E40"/>
-    </linearGradient>
-    <linearGradient id="overlapE" x1="512" y1="540" x2="512" y2="778" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#70C4AA" stop-opacity="0.72"/>
-      <stop offset="100%" stop-color="#205243" stop-opacity="0.94"/>
-    </linearGradient>
-    <filter id="dropShadowE" x="40" y="60" width="944" height="944" filterUnits="userSpaceOnUse">
+    <filter id="dropShadowC" x="40" y="60" width="944" height="944" filterUnits="userSpaceOnUse">
       <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#19211E" flood-opacity="0.22"/>
     </filter>
-    <filter id="markShadowE" x="200" y="240" width="624" height="620" filterUnits="userSpaceOnUse">
-      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#14332A" flood-opacity="0.18"/>
-    </filter>
   </defs>
-
-  <g id="AppIcon_E_EditorialPagesStar" filter="url(#dropShadowE)">
-    <g clip-path="url(#squircleClipE)">
-      <g id="Background">
-        <rect x="100" y="100" width="824" height="824" fill="url(#paperBgE)"/>
-        <rect x="100" y="100" width="824" height="824" fill="url(#starGlowE)"/>
-      </g>
-
-      <g id="GrowthPagesMark" filter="url(#markShadowE)">
-        <path d="M512 778 C482 710 426 672 346 628 C264 584 226 490 250 388 C356 402 454 468 512 560 C544 614 542 700 512 778 Z"
-              fill="url(#leftLeafE)"/>
-        <path d="M512 778 C542 710 598 672 678 628 C760 584 798 490 774 388 C668 402 570 468 512 560 C480 614 482 700 512 778 Z"
-              fill="url(#rightLeafE)"/>
-        <path d="M512 560 C544 614 542 700 512 778 C482 700 480 614 512 560 Z"
-              fill="url(#overlapE)"/>
-        <path d="M276 410 C372 448 448 524 512 630" stroke="#A7D9C8" stroke-opacity="0.24" stroke-width="4" stroke-linecap="round"/>
-        <path d="M748 410 C652 448 576 524 512 630" stroke="#D2EFE5" stroke-opacity="0.30" stroke-width="4" stroke-linecap="round"/>
-      </g>
-
-      <g id="ChiseledPolarisStar">
-        <!-- 8 chiseled jewelry facets centered at (512, 366) -->
-        <polygon points="512,366 512,256 484,338" fill="#FBE4AC"/>
-        <polygon points="512,366 512,256 540,338" fill="#E2B25C"/>
-        <polygon points="512,366 622,366 540,338" fill="#F5D488"/>
-        <polygon points="512,366 622,366 540,394" fill="#C48A34"/>
-        <polygon points="512,366 512,476 484,394" fill="#DCAA52"/>
-        <polygon points="512,366 512,476 540,394" fill="#AD7424"/>
-        <polygon points="512,366 402,366 484,338" fill="#FBE4AC"/>
-        <polygon points="512,366 402,366 484,394" fill="#D69F45"/>
-      </g>
-
-      <use id="OuterBorder" href="#squircleE" stroke="#D6D0C2" stroke-width="5"/>
-    </g>
-  </g>
+  <path d="M383.41 100H640.59C722.19 100 763 100 799.79 113.89C854.88 131.34 892.66 169.12 910.11 224.21C924 261 924 301.81 924 383.41V640.59C924 722.19 924 763 910.11 799.79C892.66 854.88 854.88 892.66 799.79 910.11C763 924 722.19 924 640.59 924H383.41C301.81 924 261 924 224.21 910.11C169.12 892.66 131.34 854.88 113.89 799.79C100 763 100 722.19 100 640.59V383.41C100 301.81 100 261 113.89 224.21C131.34 169.12 169.12 131.34 224.21 113.89C261 100 301.81 100 383.41 100Z" fill="url(#paperBgC)" filter="url(#dropShadowC)"/>
+  <circle cx="512" cy="512" r="302" stroke="#1E2320" stroke-width="22"/>
+  <path d="M512 274L512 244" stroke="#D9A441" stroke-opacity="1" stroke-width="16" stroke-linecap="round"/>
+  <path d="M750 512L780 512" stroke="#1E2320" stroke-opacity="0.28" stroke-width="16" stroke-linecap="round"/>
+  <path d="M512 750L512 780" stroke="#1E2320" stroke-opacity="0.28" stroke-width="16" stroke-linecap="round"/>
+  <path d="M274 512L244 512" stroke="#1E2320" stroke-opacity="0.28" stroke-width="16" stroke-linecap="round"/>
+  <path d="M512 512 C620.3 527.6 700.8 403.7 680.4 311.3 C585.9 307.2 477.8 408.1 512 512Z" fill="#255A4A"/>
+  <path d="M537.7 481.4L654.7 341.9" stroke="#8CC7B2" stroke-opacity="0.55" stroke-width="9" stroke-linecap="round"/>
+  <path d="M512 512 C450.7 511.7 393.6 593.9 397.6 648.4 C451.9 642.8 522.9 572.3 512 512Z" fill="#1E2320"/>
+  <circle cx="512" cy="512" r="30" fill="#FBF9F3" stroke="#1E2320" stroke-width="12"/>
 </svg>
