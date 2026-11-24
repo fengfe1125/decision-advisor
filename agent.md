@@ -44,7 +44,7 @@ app/
 ### 1. 部署模式与配置管理 (`app/config.py`)
 
 - **双部署模式 (`DeploymentMode`)**：
-  - `embedded_local`（默认）：供本机调试（端口 `8789`）或 macOS App 内置引擎（端口 `18789`）使用，默认记忆库指向本机 iCloud `/Users/sakura/Library/Mobile Documents/com~apple~CloudDocs/决策`。
+  - `embedded_local`（默认）：供本机调试（端口 `8789`）或 macOS App 内置引擎（端口 `18789`）使用，默认记忆库指向本机 iCloud `~/Library/Mobile Documents/com~apple~CloudDocs/决策`。
   - `remote_vps`：当环境变量 `ADVISOR_DEPLOYMENT_MODE=remote_vps` 时激活，默认记忆库指向 `$ADVISOR_DATA_DIR/vault`（在 VPS 上为 `/opt/decision-advisor/data/vault`）。
 - **五大模型提供商类型 (`ProviderKind`)**：
   1. `chatgpt_oauth`：通过 OpenAI 官方 Sign in with ChatGPT 授权令牌直连 `https://api.openai.com/v1/responses`，默认模型 `gpt-5.4`。
@@ -205,7 +205,7 @@ macOS 客户端已精简为**纯远程客户端**（不再在 `.app` 内打包�
 
 ### 1. 运行自动化测试
 ```bash
-cd /Volumes/Developer/个人汇总/apps/decision-advisor
+cd apps/decision-advisor   # 在 monorepo 根目录执行；独立镜像仓库中直接在根目录执行
 
 # 标准运行
 uv run pytest -v
@@ -216,21 +216,21 @@ DEVELOPER_DIR=/Library/Developer/CommandLineTools ./.venv/bin/pytest tests/test_
 
 ### 2. 启动本机纯 API 调试后端（仅本地开发调试用）
 ```bash
-cd /Volumes/Developer/个人汇总/apps/decision-advisor
+cd apps/decision-advisor   # 在 monorepo 根目录执行；独立镜像仓库中直接在根目录执行
 ./start.sh
 # 默认监听 http://127.0.0.1:8789/api/health
 ```
 
 ### 3. 编译并安装原生 macOS 客户端
 ```bash
-cd /Volumes/Developer/个人汇总/apps/decision-advisor
+cd apps/decision-advisor   # 在 monorepo 根目录执行；独立镜像仓库中直接在根目录执行
 ./macos/build_app.sh --install
 # 编译产物位于 macos/dist/成长决策顾问.app，并自动覆盖安装至 /Applications/成长决策顾问.app
 ```
 
 ### 4. 部署或同步至远程 24/7 VPS (`murmur-new-vps`)
 ```bash
-cd /Volumes/Developer/个人汇总/apps/decision-advisor
+cd apps/decision-advisor   # 在 monorepo 根目录执行；独立镜像仓库中直接在根目录执行
 
 # 仅更新 VPS 上的 Python 后端代码并重启 systemd 服务（保留云端现有数据与配置）
 ./deploy/deploy-vps.sh

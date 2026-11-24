@@ -49,7 +49,7 @@ final class AppState {
     }
 
     var localICloudVaultPath: String {
-        "/Users/sakura/Library/Mobile Documents/com~apple~CloudDocs/决策"
+        (NSHomeDirectory() as NSString).appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/决策")
     }
 
     // Health & Config

@@ -55,7 +55,7 @@
 #### 第 3 步：在 Mac 启动反向 SSH 隧道
 确保本机 `./start.sh` 已在运行，然后新开终端执行：
 ```bash
-cd /Volumes/Developer/个人汇总/apps/decision-advisor
+# 在 decision-advisor 项目根目录执行
 ./deploy/vps-tunnel-mac.sh
 ```
 *(脚本已默认指向 `murmur-new-vps`，可配合 `autossh` 断线自动重连；所有记忆与 SQLite 物理留在你的 Mac，不落云服务器硬盘。)*
@@ -93,7 +93,7 @@ npm install -g @openai/codex
 在 `~/.codex/config.toml` 中加入：
 ```toml
 [mcp_servers.decision-memory]
-command = "/Users/sakura/.local/bin/basic-memory"
+command = "~/.local/bin/basic-memory"  # 若 Codex 不展开 ~，请改成 `which basic-memory` 的绝对路径
 args = ["mcp", "--project", "decision-kb"]
 ```
-进入 `/Users/sakura/Library/Mobile Documents/com~apple~CloudDocs/决策` 运行 `codex` 并选择 **Sign in with ChatGPT** 即可开聊。
+进入 `~/Library/Mobile Documents/com~apple~CloudDocs/决策` 运行 `codex` 并选择 **Sign in with ChatGPT** 即可开聊。

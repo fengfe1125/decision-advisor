@@ -37,6 +37,11 @@
   ```bash
   ./deploy/deploy-vps.sh
   ```
+  脚本只允许从与 `origin/main` 一致的干净 `main` 部署；部署前把 `advisor_state.db` 快照到 `/opt/decision-advisor/backups/pre-deploy-*`（保留最近 5 份），部署后写入 `/opt/decision-advisor/DEPLOYED_COMMIT`。
+- **查看 VPS 当前运行的版本**：
+  ```bash
+  ssh murmur-new-vps "cat /opt/decision-advisor/DEPLOYED_COMMIT"
+  ```
 - **同步本地 iCloud 记忆库与配置到 VPS**：
   ```bash
   ./deploy/deploy-vps.sh --sync-vault

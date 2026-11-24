@@ -47,8 +47,15 @@ final class APIClient: Sendable {
     }
 
     static func readSeedAccessToken() -> String {
+        // 开发期便利：从编译时源码位置推导 apps/decision-advisor/config.local.json，
+        // 避免在源码中写死本机绝对路径（macos/Sources/DecisionAdvisor/APIClient.swift 向上 4 级）。
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // DecisionAdvisor
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // macos
+            .deletingLastPathComponent() // decision-advisor
         let candidates: [URL] = [
-            URL(fileURLWithPath: "/Volumes/Developer/个人汇总/apps/decision-advisor/config.local.json"),
+            appRoot.appendingPathComponent("config.local.json"),
         ]
 
         for url in candidates {

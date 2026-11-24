@@ -86,7 +86,7 @@ def list_snapshots(vault_path: Path, limit: int = 20) -> list[dict]:
 
 def trigger_basic_memory_reindex() -> None:
     """Fire-and-forget reindex if basic-memory CLI is installed."""
-    bm_bin = shutil.which("basic-memory") or "/Users/sakura/.local/bin/basic-memory"
+    bm_bin = shutil.which("basic-memory") or str(Path.home() / ".local" / "bin" / "basic-memory")
     if not Path(bm_bin).exists():
         return
     try:

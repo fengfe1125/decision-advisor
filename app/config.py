@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from .chatgpt_oauth import get_public_oauth_status
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_VAULT_PATH = "/Users/sakura/Library/Mobile Documents/com~apple~CloudDocs/决策"
+DEFAULT_VAULT_PATH = str(Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "决策")
 DEFAULT_CONFIG_PATH = BASE_DIR / "config.local.json"
 EXAMPLE_CONFIG_PATH = BASE_DIR / "config.example.json"
 
@@ -73,7 +73,7 @@ def _default_config() -> AppConfig:
     if EXAMPLE_CONFIG_PATH.exists():
         raw = json.loads(EXAMPLE_CONFIG_PATH.read_text(encoding="utf-8"))
         cfg = AppConfig.model_validate(raw)
-        if os.environ.get("DECISION_VAULT_PATH") or get_deployment_mode() == "remote_vps":
+        if not cfg.vault_path or os.environ.get("DECISION_VAULT_PATH") or get_deployment_mode() == "remote_vps":
             cfg.vault_path = get_default_vault_path()
         return cfg
     return AppConfig(

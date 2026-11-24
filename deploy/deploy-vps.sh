@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VPS_HOST="${VPS_HOST:-murmur-new-vps}"
 REMOTE_DIR="/opt/decision-advisor"
-LOCAL_VAULT="${DECISION_VAULT_PATH:-/Users/sakura/Library/Mobile Documents/com~apple~CloudDocs/决策}"
+LOCAL_VAULT="${DECISION_VAULT_PATH:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/决策}"
 SYNC_VAULT=false
 
 for arg in "$@"; do
@@ -17,6 +17,27 @@ for arg in "$@"; do
     SYNC_VAULT=true
   fi
 done
+
+echo "=== 0. Preflight: deploy only merged, clean main ==="
+REPO_ROOT="$(git -C "$PROJECT_DIR" rev-parse --show-toplevel)"
+DEPLOY_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
+DEPLOY_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+if [[ "${ALLOW_UNMERGED_DEPLOY:-0}" != "1" ]]; then
+  if [[ "$DEPLOY_BRANCH" != "main" ]]; then
+    echo "error: 只能从 main 部署（当前 $DEPLOY_BRANCH）。临时绕过：ALLOW_UNMERGED_DEPLOY=1" >&2
+    exit 1
+  fi
+  if [[ -n "$(git -C "$REPO_ROOT" status --porcelain -- "$PROJECT_DIR")" ]]; then
+    echo "error: $PROJECT_DIR 有未提交改动，先提交并合并后再部署。" >&2
+    exit 1
+  fi
+  git -C "$REPO_ROOT" fetch --quiet origin main
+  if [[ "$DEPLOY_COMMIT" != "$(git -C "$REPO_ROOT" rev-parse origin/main)" ]]; then
+    echo "error: 本地 main 与 origin/main 不一致，先 git pull --ff-only origin main。" >&2
+    exit 1
+  fi
+fi
+echo "Deploying ${DEPLOY_BRANCH}@${DEPLOY_COMMIT:0:7}"
 
 echo "=== 1. Ensuring swap & directories on ${VPS_HOST} ==="
 ssh "$VPS_HOST" 'bash -s' <<'EOF'
@@ -35,8 +56,21 @@ if ! swapon --show | grep -q '/'; then
   sysctl -w vm.swappiness=20 >/dev/null || true
 fi
 
+# Snapshot the SQLite state DB before touching code; keep the newest 5 snapshots.
+BACKUP_ROOT=/opt/decision-advisor/backups
+if [[ -f /opt/decision-advisor/data/advisor_state.db ]]; then
+  SNAP="$BACKUP_ROOT/pre-deploy-$(date -u +%Y%m%d-%H%M%S)"
+  mkdir -p "$SNAP"
+  if command -v sqlite3 >/dev/null 2>&1; then
+    sqlite3 /opt/decision-advisor/data/advisor_state.db ".backup '$SNAP/advisor_state.db'"
+  else
+    cp -p /opt/decision-advisor/data/advisor_state.db "$SNAP/advisor_state.db"
+  fi
+  ls -1dt "$BACKUP_ROOT"/pre-deploy-* 2>/dev/null | tail -n +6 | xargs -r rm -rf
+fi
+
 if ! command -v git >/dev/null 2>&1; then
-  apt-get update -qq && apt-get install -y -qq git
+  apt-get update -qq && apt-get install -y -qq git sqlite3
 fi
 
 if ! command -v uv >/dev/null 2>&1 && [[ ! -x /root/.local/bin/uv ]]; then
@@ -103,6 +137,9 @@ echo "Local VPS check:"
 curl -sS http://127.0.0.1:8789/
 echo ""
 EOF
+
+printf 'commit=%s\nbranch=%s\ndeployed_at=%s\n' "$DEPLOY_COMMIT" "$DEPLOY_BRANCH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  | ssh "$VPS_HOST" "cat > ${REMOTE_DIR}/DEPLOYED_COMMIT"
 
 echo "=== 5. Public HTTPS verification ==="
 curl -sS https://decision.sakuramu.edu.kg/

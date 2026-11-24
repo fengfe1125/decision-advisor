@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GIT_DIR="${DECISION_GIT_DIR:-$SCRIPT_DIR/.memory-git}"
-WORK_TREE="${DECISION_VAULT_PATH:-/Users/sakura/Library/Mobile Documents/com~apple~CloudDocs/决策}"
+WORK_TREE="${DECISION_VAULT_PATH:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/决策}"
 MSG="${1:-memory: 自动快照 $(date '+%Y-%m-%d %H:%M:%S')}"
 
 if [[ ! -d "$WORK_TREE" ]]; then
