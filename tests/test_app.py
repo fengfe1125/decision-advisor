@@ -1003,3 +1003,107 @@ def test_cross_agent_memory_import_parsers_and_extract(temp_env, monkeypatch):
     ).json()
     assert commit_res["ok"] is True
     assert (vault / "00-核心自我" / "identity.md").exists()
+
+
+def test_reasoning_effort_builders_config_and_chat_stream(temp_env, monkeypatch: pytest.MonkeyPatch):
+    # 1. ChatGPT OAuth Responses API
+    gpt54 = ProviderPreset(id="cg", name="ChatGPT", kind="chatgpt_oauth", base_url="https://api.openai.com/v1", model="gpt-5.4")
+    _, _, body_auto = build_provider_request(gpt54, "sys", [{"role": "user", "content": "hi"}], oauth_access_token="tok")
+    assert "reasoning" not in body_auto
+    _, _, body_xhigh = build_provider_request(
+        gpt54, "sys", [{"role": "user", "content": "hi"}], oauth_access_token="tok", reasoning_effort="xhigh"
+    )
+    assert body_xhigh["reasoning"] == {"effort": "xhigh"}
+    _, _, body_none = build_provider_request(
+        gpt54, "sys", [{"role": "user", "content": "hi"}], oauth_access_token="tok", reasoning_effort="none"
+    )
+    assert body_none["reasoning"] == {"effort": "none"}
+
+    # 2. OpenAI compatible (GPT-6 maps none -> low; legacy GPT-4.1 omits reasoning_effort)
+    gpt6 = ProviderPreset(id="o6", name="OpenAI", kind="openai_compatible", base_url="https://api.openai.com/v1", api_key="k", model="gpt-6.2-sol")
+    _, _, body_o6_high = build_provider_request(gpt6, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="high")
+    assert body_o6_high["reasoning_effort"] == "high"
+    assert body_o6_high["max_completion_tokens"] == 16384
+    _, _, body_o6_none = build_provider_request(gpt6, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="none")
+    assert body_o6_none["reasoning_effort"] == "low"
+
+    gpt41 = ProviderPreset(id="o4", name="Legacy", kind="openai_compatible", base_url="https://api.openai.com/v1", api_key="k", model="gpt-4.1")
+    _, _, body_gpt41 = build_provider_request(gpt41, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="high")
+    assert "reasoning_effort" not in body_gpt41
+
+    # 3. DeepSeek (enabled + mapped xhigh -> max; none -> disabled)
+    ds = ProviderPreset(id="ds", name="DS", kind="deepseek", base_url="https://api.deepseek.com/v1", api_key="k", model="deepseek-v4-pro")
+    _, _, body_ds_xhigh = build_provider_request(ds, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="xhigh")
+    assert body_ds_xhigh["thinking"] == {"type": "enabled"}
+    assert body_ds_xhigh["reasoning_effort"] == "max"
+    assert body_ds_xhigh["max_tokens"] == 32768
+    assert "temperature" not in body_ds_xhigh
+    _, _, body_ds_none = build_provider_request(ds, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="none")
+    assert body_ds_none["thinking"] == {"type": "disabled"}
+    assert body_ds_none["reasoning_effort"] == "none"
+
+    # 4. Claude (modern 5.5 adaptive + output_config; legacy 4.5 budget_tokens)
+    cl55 = ProviderPreset(id="c1", name="Claude", kind="claude", base_url="https://api.anthropic.com", api_key="k", model="claude-sonnet-5-5")
+    _, _, body_cl55 = build_provider_request(cl55, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="high")
+    assert body_cl55["thinking"] == {"type": "adaptive"}
+    assert body_cl55["output_config"] == {"effort": "high"}
+    assert "temperature" not in body_cl55
+    _, _, body_cl55_off = build_provider_request(cl55, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="none")
+    assert body_cl55_off["thinking"] == {"type": "disabled"}
+
+    cl45 = ProviderPreset(id="c2", name="Claude45", kind="claude", base_url="https://api.anthropic.com", api_key="k", model="claude-sonnet-4-5")
+    _, _, body_cl45 = build_provider_request(cl45, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="medium")
+    assert body_cl45["thinking"] == {"type": "enabled", "budget_tokens": 6144}
+    assert body_cl45["max_tokens"] >= 6144 + 4096
+    assert "temperature" not in body_cl45
+
+    # 5. Gemini (modern 4 thinkingLevel; legacy 2.5 thinkingBudget)
+    gem4 = ProviderPreset(id="g4", name="Gemini4", kind="gemini", base_url="https://generativelanguage.googleapis.com", api_key="k", model="gemini-4-neon")
+    _, _, body_gem4 = build_provider_request(gem4, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="xhigh")
+    assert body_gem4["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "xhigh", "includeThoughts": True}
+    assert body_gem4["generationConfig"]["maxOutputTokens"] == 32768
+
+    gem25 = ProviderPreset(id="g25", name="Gemini25", kind="gemini", base_url="https://generativelanguage.googleapis.com", api_key="k", model="gemini-2.5-flash")
+    _, _, body_gem25_off = build_provider_request(gem25, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="none")
+    assert body_gem25_off["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+    _, _, body_gem25_hi = build_provider_request(gem25, "sys", [{"role": "user", "content": "hi"}], reasoning_effort="high")
+    assert body_gem25_hi["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 16384, "includeThoughts": True}
+    assert body_gem25_hi["generationConfig"]["maxOutputTokens"] >= 16384 + 4096
+
+    # 6. Config persistence + /api/chat/stream forwarding
+    client = TestClient(app)
+    cfg = client.get("/api/config").json()
+    providers = cfg["providers"]
+    providers[0]["reasoning_effort"] = "medium"
+    updated = client.put("/api/config", json={"providers": providers, "active_provider_id": providers[0]["id"]}).json()
+    assert updated["providers"][0]["reasoning_effort"] == "medium"
+
+    captured_efforts: list[str | None] = []
+
+    async def fake_stream(provider, sys_p, msgs, **kwargs):
+        captured_efforts.append(kwargs.get("reasoning_effort"))
+        yield {"type": "text", "delta": "收到"}
+
+    monkeypatch.setattr("app.main.stream_llm", fake_stream)
+
+    # Explicit request override beats provider preset
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={"messages": [{"role": "user", "content": "测试思考强度"}], "reasoning_effort": "xhigh"},
+    ) as resp:
+        assert resp.status_code == 200
+        events = [json.loads(line[5:].strip()) for line in resp.iter_lines() if line.startswith("data:")]
+    assert captured_efforts[-1] == "xhigh"
+    assert next(e for e in events if e["type"] == "meta")["reasoning_effort"] == "xhigh"
+
+    # Omitting reasoning_effort falls back to provider preset ("medium")
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={"messages": [{"role": "user", "content": "测试预设回落"}]},
+    ) as resp:
+        assert resp.status_code == 200
+        events2 = [json.loads(line[5:].strip()) for line in resp.iter_lines() if line.startswith("data:")]
+    assert captured_efforts[-1] == "medium"
+    assert next(e for e in events2 if e["type"] == "meta")["reasoning_effort"] == "medium"

@@ -1289,6 +1289,25 @@ private struct ProviderConfigCard: View {
                     }
 
                     GridRow {
+                        FieldLabel("默认思考")
+                        Picker(
+                            "",
+                            selection: Binding(
+                                get: { provider.defaultReasoningEffort },
+                                set: { provider.reasoningEffort = $0.rawValue }
+                            )
+                        ) {
+                            ForEach(ReasoningEffort.allCases) { level in
+                                Text(level == .auto ? "自动（由模型决定）" : "\(level.label) · \(level.subtitle)").tag(level)
+                            }
+                        }
+                        .labelsHidden()
+                        .disabled(!provider.supportsReasoningEffort)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .gridCellColumns(3)
+                    }
+
+                    GridRow {
                         FieldLabel(isChatGPTOAuth ? "授权方式" : "API Key")
                         if isChatGPTOAuth {
                             Text("使用上方「ChatGPT 订阅账号授权登录」OAuth 令牌自动鉴权与续期，无需填写 API Key")

@@ -21,6 +21,7 @@ final class AppState {
     private enum PrefKeys {
         static let remoteURL = "da.remote_server_url"
         static let remoteToken = "da.remote_access_token"
+        static let reasoningEffort = "da.reasoning_effort"
     }
 
     init() {
@@ -36,6 +37,11 @@ final class AppState {
             if !seeded.isEmpty {
                 defaults.set(seeded, forKey: PrefKeys.remoteToken)
             }
+        }
+
+        if let savedEffort = defaults.string(forKey: PrefKeys.reasoningEffort),
+           let parsed = ReasoningEffort(rawValue: savedEffort) {
+            self.reasoningEffort = parsed
         }
     }
 
@@ -63,11 +69,32 @@ final class AppState {
     var messages: [ChatMessageItem] = []
     var chatMode: ChatMode = .chat
     var selectedProviderId: String = ""
+    var reasoningEffort: ReasoningEffort = .auto
     var allowSensitive: Bool = false
     var useAsOfDate: Bool = false
     var asOfDate: Date = Date()
     var chatInput: String = ""
     var isStreaming: Bool = false
+
+    func setReasoningEffort(_ effort: ReasoningEffort) {
+        reasoningEffort = effort
+        UserDefaults.standard.set(effort.rawValue, forKey: PrefKeys.reasoningEffort)
+    }
+
+    func switchChatGPTModel(_ slug: String) async {
+        guard let cfg = config,
+              let idx = cfg.providers.firstIndex(where: { $0.kind == "chatgpt_oauth" }) else { return }
+        var updatedProviders = cfg.providers
+        updatedProviders[idx].model = slug
+        let targetId = updatedProviders[idx].id
+        selectedProviderId = targetId
+        await saveSettings(
+            providers: updatedProviders,
+            activeProviderId: targetId,
+            embedding: cfg.embedding,
+            publicBaseUrl: cfg.publicBaseUrl
+        )
+    }
 
     // Semi-Auto Proposals
     var isExtractingProposals: Bool = false
@@ -354,7 +381,8 @@ final class AppState {
             mode: chatMode,
             providerId: selectedProviderId.isEmpty ? nil : selectedProviderId,
             allowSensitive: allowSensitive,
-            asOf: asOfStr
+            asOf: asOfStr,
+            reasoningEffort: reasoningEffort
         )
 
         do {
@@ -729,6 +757,7 @@ final class AppState {
                     "base_url": $0.baseUrl,
                     "model": $0.model,
                     "api_key": $0.apiKey,
+                    "reasoning_effort": $0.defaultReasoningEffort.rawValue,
                 ]
             },
             "embedding": [

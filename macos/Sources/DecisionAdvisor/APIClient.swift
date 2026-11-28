@@ -361,7 +361,8 @@ final class APIClient: Sendable {
         mode: ChatMode,
         providerId: String?,
         allowSensitive: Bool,
-        asOf: String?
+        asOf: String?,
+        reasoningEffort: ReasoningEffort = .auto
     ) -> AsyncThrowingStream<StreamEvent, Error> {
         var obj: [String: Any] = [
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
@@ -371,6 +372,7 @@ final class APIClient: Sendable {
         if let sid = sessionId { obj["session_id"] = sid }
         if let pid = providerId { obj["provider_id"] = pid }
         if let d = asOf, !d.isEmpty { obj["as_of"] = d }
+        if reasoningEffort != .auto { obj["reasoning_effort"] = reasoningEffort.rawValue }
 
         let bodyData = try? JSONSerialization.data(withJSONObject: obj)
         let clientBase = self.baseURL

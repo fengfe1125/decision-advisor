@@ -72,6 +72,72 @@ enum ChatMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum ReasoningEffort: String, CaseIterable, Identifiable, Codable, Sendable {
+    case auto
+    case none
+    case low
+    case medium
+    case high
+    case xhigh
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .auto: return "自动"
+        case .none: return "关闭思考"
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        case .xhigh: return "极高"
+        }
+    }
+
+    var pillLabel: String {
+        switch self {
+        case .auto: return "自动"
+        case .none: return "不思考"
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        case .xhigh: return "极高"
+        }
+    }
+
+    var pillIcon: String {
+        switch self {
+        case .none: return "bolt.slash"
+        case .auto, .low, .medium, .high, .xhigh: return "brain"
+        }
+    }
+
+    var menuIcon: String {
+        switch self {
+        case .auto: return "wand.and.stars"
+        case .none: return "bolt.slash"
+        case .low: return "dial.low"
+        case .medium: return "dial.medium"
+        case .high: return "dial.high"
+        case .xhigh: return "flame"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .auto: return "由模型默认策略自动决定"
+        case .none: return "尽量关闭思考链，追求最快响应"
+        case .low: return "轻度思考，适合日常倾诉与快速问答"
+        case .medium: return "均衡思考深度与响应速度"
+        case .high: return "深入推理，适合复杂权衡与 9 步决策"
+        case .xhigh: return "极限深度推理，适合重大人生决策"
+        }
+    }
+
+    var isExplicit: Bool {
+        self != .auto
+    }
+}
+
 enum MemoryViewMode: String, CaseIterable, Identifiable, Sendable {
     case list = "列表"
     case semantic = "语义"
@@ -418,6 +484,7 @@ struct ProviderPresetDTO: Codable, Identifiable, Hashable, Sendable {
     var hasApiKey: Bool?
     var model: String
     var temperature: Double?
+    var reasoningEffort: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, kind, model, temperature
@@ -425,6 +492,7 @@ struct ProviderPresetDTO: Codable, Identifiable, Hashable, Sendable {
         case apiKey = "api_key"
         case apiKeyMasked = "api_key_masked"
         case hasApiKey = "has_api_key"
+        case reasoningEffort = "reasoning_effort"
     }
 }
 
@@ -437,6 +505,26 @@ extension ProviderPresetDTO {
     var displayModelName: String {
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? name : trimmed
+    }
+
+    var defaultReasoningEffort: ReasoningEffort {
+        ReasoningEffort(rawValue: (reasoningEffort ?? "auto").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) ?? .auto
+    }
+
+    /// 判断当前模型是否支持思考强度参数（仅对明确不支持思考链的旧模型返回 false）
+    var supportsReasoningEffort: Bool {
+        let raw = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let name = raw.split(separator: "/").last.map(String.init) ?? raw
+        guard !name.isEmpty else { return true }
+        let legacyPrefixes = [
+            "gpt-3.5", "gpt-4o", "gpt-4.1", "gpt-4-turbo", "chatgpt-4o",
+            "gemini-1.5", "gemini-2.0",
+            "claude-3-haiku", "claude-3-sonnet", "claude-3-opus", "claude-3-5", "claude-3.5",
+        ]
+        if name == "gpt-4" || legacyPrefixes.contains(where: { name.hasPrefix($0) }) {
+            return false
+        }
+        return true
     }
 
     var kindIcon: String {

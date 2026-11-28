@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from .chatgpt_oauth import ChatGPTOAuthError, get_valid_access_token
-from .config import ProviderPreset
+from .config import ProviderPreset, normalize_reasoning_effort
 
 
 def _base_model_name(model: str) -> str:
@@ -23,6 +23,21 @@ def _uses_openai_max_completion_tokens(model: str) -> bool:
     return bool(re.match(r"^(?:gpt-(?:[5-9]|[1-9]\d+)|o[1-9])(?:[-.]|$)", name))
 
 
+def _is_legacy_non_reasoning_openai(model: str) -> bool:
+    name = _base_model_name(model)
+    return bool(re.match(r"^(?:gpt-(?:3\.5|4)|chatgpt-4o)(?:[-.]|$)", name))
+
+
+def _openai_supports_xhigh(model: str) -> bool:
+    name = _base_model_name(model)
+    return bool(re.match(r"^gpt-(?:5\.[2-9]|5\.\d{2,}|[6-9]|[1-9]\d+)(?:[-.]|$)", name))
+
+
+def _openai_allows_none_effort(model: str) -> bool:
+    name = _base_model_name(model)
+    return bool(re.match(r"^gpt-5\.[1-9](?:[-.]|$)", name))
+
+
 def _openai_disallows_temperature(model: str) -> bool:
     name = _base_model_name(model)
     return bool(
@@ -33,26 +48,56 @@ def _openai_disallows_temperature(model: str) -> bool:
     )
 
 
-def _claude_disallows_temperature(model: str) -> bool:
+def _claude_version(model: str) -> tuple[int, int] | None:
     name = _base_model_name(model)
     if not name.startswith("claude-"):
-        return False
+        return None
     m = re.match(r"^claude-(?:[a-z]+-)?(\d+)(?:[-.](\d+))?(?:[-.]|$)", name)
     if not m:
-        return False
+        return None
     major = int(m.group(1))
     minor = int(m.group(2)) if m.group(2) is not None else 0
-    return (major, minor) >= (4, 7)
+    return (major, minor)
+
+
+def _claude_disallows_temperature(model: str) -> bool:
+    ver = _claude_version(model)
+    return ver is not None and ver >= (4, 7)
+
+
+def _gemini_version(model: str) -> tuple[int, int] | None:
+    name = _base_model_name(model)
+    if not name.startswith("gemini-"):
+        return None
+    m = re.match(r"^gemini-(\d+)(?:\.(\d+))?(?:[-.]|$)", name)
+    if not m:
+        return None
+    major = int(m.group(1))
+    minor = int(m.group(2)) if m.group(2) is not None else 0
+    return (major, minor)
 
 
 def _gemini_disallows_temperature(model: str) -> bool:
-    name = _base_model_name(model)
-    if not name.startswith("gemini-"):
-        return False
-    m = re.match(r"^gemini-(\d+)(?:[-.]|$)", name)
-    if not m:
-        return False
-    return int(m.group(1)) >= 4
+    ver = _gemini_version(model)
+    return ver is not None and ver >= (4, 0)
+
+
+def _resolve_effective_effort(provider: ProviderPreset, reasoning_effort: str | None) -> str:
+    if reasoning_effort is not None:
+        return normalize_reasoning_effort(reasoning_effort)
+    return normalize_reasoning_effort(provider.reasoning_effort)
+
+
+def _effective_max_tokens(base_max_tokens: int, effort: str) -> int:
+    if base_max_tokens < 4096 or effort in {"auto", "none", "low"}:
+        return base_max_tokens
+    if effort == "medium":
+        return max(base_max_tokens, 8192)
+    if effort == "high":
+        return max(base_max_tokens, 16384)
+    if effort == "xhigh":
+        return max(base_max_tokens, 32768)
+    return base_max_tokens
 
 
 class ProviderError(RuntimeError):
@@ -124,8 +169,11 @@ def build_provider_request(
     max_tokens: int = 4096,
     stream: bool = False,
     oauth_access_token: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, dict[str, str], dict[str, Any]]:
     temp = provider.temperature if temperature is None else temperature
+    effort = _resolve_effective_effort(provider, reasoning_effort)
+    effective_max = _effective_max_tokens(max_tokens, effort)
 
     if provider.kind == "chatgpt_oauth":
         url = _normalize_openai_responses_endpoint(provider.base_url or "https://api.openai.com/v1")
@@ -163,6 +211,13 @@ def build_provider_request(
         }
         if system_prompt:
             body["instructions"] = system_prompt
+        if effort != "auto" and not _is_legacy_non_reasoning_openai(provider.model):
+            mapped_effort = effort
+            if effort == "none" and not _openai_allows_none_effort(provider.model):
+                mapped_effort = "low"
+            elif effort == "xhigh" and not _openai_supports_xhigh(provider.model):
+                mapped_effort = "high"
+            body["reasoning"] = {"effort": mapped_effort}
         return url, headers, body
 
     if provider.kind in {"deepseek", "openai_compatible"}:
@@ -185,16 +240,44 @@ def build_provider_request(
             "messages": payload_messages,
         }
         if provider.kind == "openai_compatible" and _uses_openai_max_completion_tokens(provider.model):
-            body["max_completion_tokens"] = max_tokens
+            body["max_completion_tokens"] = effective_max
         else:
-            body["max_tokens"] = max_tokens
+            body["max_tokens"] = effective_max
         if stream:
             body["stream"] = True
-        if not (
+        allow_temp = not (
             _openai_disallows_temperature(provider.model)
             or _claude_disallows_temperature(provider.model)
             or _gemini_disallows_temperature(provider.model)
-        ):
+        )
+        if effort != "auto":
+            if provider.kind == "deepseek":
+                if effort == "none":
+                    body["thinking"] = {"type": "disabled"}
+                    body["reasoning_effort"] = "none"
+                else:
+                    ds_map = {"low": "low", "medium": "medium", "high": "high", "xhigh": "max"}
+                    body["thinking"] = {"type": "enabled"}
+                    body["reasoning_effort"] = ds_map[effort]
+                    allow_temp = False
+            elif not _is_legacy_non_reasoning_openai(provider.model):
+                name = _base_model_name(provider.model)
+                mapped_effort = effort
+                if re.match(r"^o[1-9](?:[-.]|$)", name):
+                    if effort == "none":
+                        mapped_effort = "low"
+                    elif effort == "xhigh":
+                        mapped_effort = "high"
+                elif re.match(r"^gpt-(?:[6-9]|[1-9]\d+)(?:[-.]|$)", name):
+                    if effort == "none":
+                        mapped_effort = "low"
+                elif re.match(r"^gpt-5(?:[-]|$)", name):
+                    if effort == "none":
+                        mapped_effort = "minimal"
+                    elif effort == "xhigh":
+                        mapped_effort = "high"
+                body["reasoning_effort"] = mapped_effort
+        if allow_temp:
             body["temperature"] = temp
         return url, headers, body
 
@@ -211,10 +294,25 @@ def build_provider_request(
             claude_messages.append({"role": role, "content": m.get("content", "")})
         body = {
             "model": provider.model,
-            "max_tokens": max_tokens,
+            "max_tokens": effective_max,
             "messages": claude_messages,
         }
-        if not _claude_disallows_temperature(provider.model):
+        allow_temp = not _claude_disallows_temperature(provider.model)
+        if effort != "auto":
+            ver = _claude_version(provider.model)
+            if effort == "none":
+                body["thinking"] = {"type": "disabled"}
+            elif ver is None or ver >= (4, 6):
+                body["thinking"] = {"type": "adaptive"}
+                body["output_config"] = {"effort": effort}
+                allow_temp = False
+            elif ver >= (3, 7):
+                budgets = {"low": 2048, "medium": 6144, "high": 12288, "xhigh": 24576}
+                budget = budgets[effort]
+                body["thinking"] = {"type": "enabled", "budget_tokens": budget}
+                body["max_tokens"] = max(effective_max, budget + 4096)
+                allow_temp = False
+        if allow_temp:
             body["temperature"] = temp
         if stream:
             body["stream"] = True
@@ -233,10 +331,35 @@ def build_provider_request(
             role = "model" if m.get("role") == "assistant" else "user"
             contents.append({"role": role, "parts": [{"text": m.get("content", "")}]})
         generation_config: dict[str, Any] = {
-            "maxOutputTokens": max_tokens,
+            "maxOutputTokens": effective_max,
         }
         if not _gemini_disallows_temperature(provider.model):
             generation_config["temperature"] = temp
+        if effort != "auto":
+            ver = _gemini_version(provider.model)
+            name = _base_model_name(provider.model)
+            if ver is None or ver >= (3, 0):
+                if effort == "none":
+                    level = "minimal" if ("flash" in name or "lite" in name) else "low"
+                    generation_config["thinkingConfig"] = {"thinkingLevel": level}
+                else:
+                    level = "high" if (effort == "xhigh" and ver is not None and ver < (4, 0)) else effort
+                    generation_config["thinkingConfig"] = {
+                        "thinkingLevel": level,
+                        "includeThoughts": True,
+                    }
+            elif ver >= (2, 5):
+                if effort == "none":
+                    budget = 0 if "flash" in name else 1024
+                    generation_config["thinkingConfig"] = {"thinkingBudget": budget}
+                else:
+                    budgets = {"low": 2048, "medium": 8192, "high": 16384, "xhigh": 24576}
+                    budget = budgets[effort]
+                    generation_config["thinkingConfig"] = {
+                        "thinkingBudget": budget,
+                        "includeThoughts": True,
+                    }
+                    generation_config["maxOutputTokens"] = max(effective_max, budget + 4096)
         body = {
             "contents": contents,
             "generationConfig": generation_config,
@@ -369,6 +492,7 @@ async def _iter_chatgpt_oauth_responses_stream(
     max_tokens: int = 4096,
     timeout: float = 180.0,
     meta_out: dict[str, Any] | None = None,
+    reasoning_effort: str | None = None,
 ) -> AsyncIterator[dict[str, str]]:
     if not provider.model.strip():
         raise ProviderError(f"模型「{provider.name}」尚未填写模型名称。")
@@ -387,6 +511,7 @@ async def _iter_chatgpt_oauth_responses_stream(
             max_tokens=max_tokens,
             stream=True,
             oauth_access_token=access_token,
+            reasoning_effort=reasoning_effort,
         )
 
         emitted_text = False
@@ -482,6 +607,7 @@ async def call_llm(
     temperature: float | None = None,
     max_tokens: int = 4096,
     timeout: float = 120.0,
+    reasoning_effort: str | None = None,
 ) -> ChatCompletionResult:
     if provider.kind == "chatgpt_oauth":
         meta_out: dict[str, Any] = {}
@@ -495,6 +621,7 @@ async def call_llm(
             max_tokens=max_tokens,
             timeout=timeout,
             meta_out=meta_out,
+            reasoning_effort=reasoning_effort,
         ):
             if chunk["type"] == "text":
                 texts.append(chunk["delta"])
@@ -520,6 +647,7 @@ async def call_llm(
         temperature=temperature,
         max_tokens=max_tokens,
         stream=False,
+        reasoning_effort=reasoning_effort,
     )
 
     try:
@@ -548,6 +676,7 @@ async def stream_llm(
     temperature: float | None = None,
     max_tokens: int = 4096,
     timeout: float = 180.0,
+    reasoning_effort: str | None = None,
 ) -> AsyncIterator[dict[str, str]]:
     """Yields normalized SSE chunks: {'type': 'text' | 'reasoning', 'delta': '...'}."""
     if provider.kind == "chatgpt_oauth":
@@ -558,6 +687,7 @@ async def stream_llm(
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
+            reasoning_effort=reasoning_effort,
         ):
             yield chunk
         return
@@ -574,6 +704,7 @@ async def stream_llm(
         temperature=temperature,
         max_tokens=max_tokens,
         stream=True,
+        reasoning_effort=reasoning_effort,
     )
 
     try:

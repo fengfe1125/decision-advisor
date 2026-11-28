@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from .chatgpt_oauth import get_public_oauth_status
 
 # 产品版本号（macOS 客户端与 VPS 后端统一），由 bump-version.sh 维护
-APP_VERSION = "0.16"
+APP_VERSION = "0.17"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_VAULT_PATH = str(Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "决策")
@@ -22,6 +22,24 @@ EXAMPLE_CONFIG_PATH = BASE_DIR / "config.example.json"
 ProviderKind = Literal["deepseek", "openai_compatible", "claude", "gemini", "chatgpt_oauth"]
 EmbeddingMode = Literal["local_bge_zh", "openai_compatible", "disabled"]
 DeploymentMode = Literal["embedded_local", "remote_vps"]
+ReasoningEffort = Literal["auto", "none", "low", "medium", "high", "xhigh"]
+
+
+def normalize_reasoning_effort(value: str | None) -> ReasoningEffort:
+    clean = str(value or "").strip().lower()
+    if clean in {"", "auto", "default"}:
+        return "auto"
+    if clean in {"none", "off", "disabled"}:
+        return "none"
+    if clean in {"minimal", "low"}:
+        return "low"
+    if clean == "medium":
+        return "medium"
+    if clean == "high":
+        return "high"
+    if clean in {"xhigh", "max"}:
+        return "xhigh"
+    return "auto"
 
 
 def get_deployment_mode() -> DeploymentMode:
@@ -53,6 +71,7 @@ class ProviderPreset(BaseModel):
     api_key: str = ""
     model: str
     temperature: float = 0.7
+    reasoning_effort: ReasoningEffort = "auto"
 
 
 class EmbeddingConfig(BaseModel):
@@ -260,6 +279,7 @@ def merge_config_update(current: AppConfig, payload: dict) -> AppConfig:
                 final_key = existing_by_id[pid].api_key
             else:
                 final_key = ""
+            existing_effort = existing_by_id[pid].reasoning_effort if pid in existing_by_id else "auto"
             updated_providers.append(
                 ProviderPreset(
                     id=pid,
@@ -269,6 +289,9 @@ def merge_config_update(current: AppConfig, payload: dict) -> AppConfig:
                     api_key=final_key,
                     model=str(item.get("model", "")).strip(),
                     temperature=float(item.get("temperature", 0.7)),
+                    reasoning_effort=normalize_reasoning_effort(
+                        item.get("reasoning_effort", existing_effort)
+                    ),
                 )
             )
     else:

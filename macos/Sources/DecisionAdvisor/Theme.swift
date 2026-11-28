@@ -296,27 +296,6 @@ struct GlassCapsuleModifier: ViewModifier {
     }
 }
 
-/// 悬浮弹出卡片（模型切换、对话模式、检索上下文）：匹配「白玻璃 · White Glass」界面质感。
-struct GlassPopoverModifier: ViewModifier {
-    var cornerRadius: CGFloat = 16
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        content
-            .background {
-                ZStack {
-                    VisualEffectBackground(material: .popover, blendingMode: .withinWindow)
-                    Theme.cardSolid.opacity(0.95)
-                }
-                .clipShape(shape)
-            }
-            .overlay(shape.strokeBorder(Theme.glassEdge, lineWidth: 1))
-            .overlay(shape.strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 0.75))
-            .shadow(color: Color.black.opacity(0.11), radius: 22, y: 10)
-            .shadow(color: Color.black.opacity(0.04), radius: 3, y: 1)
-    }
-}
-
 extension View {
     func glassPanel(cornerRadius: CGFloat = Theme.panelRadius, tint: Color = Theme.sidebarBg, shadow: Bool = true) -> some View {
         modifier(GlassPanelModifier(cornerRadius: cornerRadius, tint: tint, shadow: shadow))
@@ -328,10 +307,6 @@ extension View {
 
     func glassCapsule() -> some View {
         modifier(GlassCapsuleModifier())
-    }
-
-    func glassPopover(cornerRadius: CGFloat = 16) -> some View {
-        modifier(GlassPopoverModifier(cornerRadius: cornerRadius))
     }
 }
 

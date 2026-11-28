@@ -31,6 +31,7 @@ from .config import (
     get_deployment_mode,
     load_config,
     merge_config_update,
+    normalize_reasoning_effort,
     save_config,
     serialize_public_config,
 )
@@ -79,6 +80,7 @@ from .search_index import (
 
 API_CAPABILITIES = [
     "chat_stream",
+    "reasoning_effort",
     "hybrid_search",
     "timeline",
     "graph",
@@ -179,6 +181,7 @@ class ChatRequest(BaseModel):
     allow_sensitive: bool = False
     session_id: str | None = None
     as_of: str | None = None
+    reasoning_effort: str | None = None
     client_id: str | None = Field(default=None, max_length=80)
 
 
@@ -635,6 +638,11 @@ def _prepare_chat_context(req: ChatRequest):
 @app.post("/api/chat", dependencies=[Depends(require_auth)])
 async def chat_with_advisor(req: ChatRequest) -> dict[str, Any]:
     provider, system_prompt, msg_dicts, references, session_id, prior_reply = _prepare_chat_context(req)
+    effective_effort = (
+        normalize_reasoning_effort(req.reasoning_effort)
+        if req.reasoning_effort is not None
+        else normalize_reasoning_effort(provider.reasoning_effort)
+    )
     if prior_reply:
         return {
             "session_id": session_id,
@@ -643,11 +651,17 @@ async def chat_with_advisor(req: ChatRequest) -> dict[str, Any]:
             "model": prior_reply["model"],
             "provider_id": provider.id,
             "provider_name": prior_reply["provider_name"],
+            "reasoning_effort": effective_effort,
             "references": json.loads(prior_reply["references_json"] or "[]"),
             "replayed": True,
         }
     try:
-        result = await call_llm(provider, system_prompt, msg_dicts)
+        result = await call_llm(
+            provider,
+            system_prompt,
+            msg_dicts,
+            reasoning_effort=effective_effort,
+        )
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -668,6 +682,7 @@ async def chat_with_advisor(req: ChatRequest) -> dict[str, Any]:
         "model": result.model,
         "provider_id": provider.id,
         "provider_name": provider.name,
+        "reasoning_effort": effective_effort,
         "references": references,
     }
 
@@ -675,6 +690,11 @@ async def chat_with_advisor(req: ChatRequest) -> dict[str, Any]:
 @app.post("/api/chat/stream", dependencies=[Depends(require_auth)])
 async def chat_stream_with_advisor(req: ChatRequest) -> StreamingResponse:
     provider, system_prompt, msg_dicts, references, session_id, prior_reply = _prepare_chat_context(req)
+    effective_effort = (
+        normalize_reasoning_effort(req.reasoning_effort)
+        if req.reasoning_effort is not None
+        else normalize_reasoning_effort(provider.reasoning_effort)
+    )
 
     async def event_generator():
         meta = {
@@ -683,6 +703,7 @@ async def chat_stream_with_advisor(req: ChatRequest) -> StreamingResponse:
             "provider_id": provider.id,
             "provider_name": provider.name,
             "model": provider.model,
+            "reasoning_effort": effective_effort,
             "references": references,
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
@@ -695,7 +716,12 @@ async def chat_stream_with_advisor(req: ChatRequest) -> StreamingResponse:
         full_text: list[str] = []
         full_reasoning: list[str] = []
         try:
-            async for chunk in stream_llm(provider, system_prompt, msg_dicts):
+            async for chunk in stream_llm(
+                provider,
+                system_prompt,
+                msg_dicts,
+                reasoning_effort=effective_effort,
+            ):
                 if chunk["type"] == "text":
                     full_text.append(chunk["delta"])
                 elif chunk["type"] == "reasoning":
@@ -788,7 +814,7 @@ async def extract_proposals(req: ExtractRequest) -> dict[str, Any]:
     )
 
     try:
-        result = await call_llm(provider, sys_prompt, user_msgs, temperature=0.2, max_tokens=4096)
+        result = await call_llm(provider, sys_prompt, user_msgs, temperature=0.2, max_tokens=4096, reasoning_effort="auto")
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -935,7 +961,7 @@ async def start_onboarding_interview(req: InterviewStartRequest | None = None) -
                     focus_slot=focus_slot,
                     allow_sensitive=body.allow_sensitive,
                 )
-                res = await call_llm(provider, sys_prompt, user_msgs, max_tokens=1024, timeout=45.0)
+                res = await call_llm(provider, sys_prompt, user_msgs, max_tokens=1024, timeout=45.0, reasoning_effort="auto")
                 opening_text = (res.content or "").strip()
                 model_name = res.model or provider.model
                 provider_name = provider.name
@@ -1013,7 +1039,7 @@ async def extract_imported_memories(req: ImportExtractRequest) -> dict[str, Any]
             allow_sensitive=req.allow_sensitive,
         )
         try:
-            result = await call_llm(provider, sys_prompt, user_msgs, temperature=0.2, max_tokens=4096, timeout=150.0)
+            result = await call_llm(provider, sys_prompt, user_msgs, temperature=0.2, max_tokens=4096, timeout=150.0, reasoning_effort="auto")
         except ProviderError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -1091,6 +1117,7 @@ async def test_provider(req: TestProviderRequest) -> dict[str, Any]:
             temperature=0.0,
             max_tokens=512,
             timeout=30.0,
+            reasoning_effort="auto",
         )
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

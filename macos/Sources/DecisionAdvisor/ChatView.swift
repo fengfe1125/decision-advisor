@@ -1,26 +1,14 @@
 import AppKit
 import SwiftUI
 
-private enum ComposerPopover: Equatable {
-    case mode
-    case context
-    case model
-
-    var anchor: UnitPoint {
-        switch self {
-        case .model: return .bottomTrailing
-        case .mode, .context: return .bottomLeading
-        }
-    }
-}
-
 struct ChatView: View {
     @Environment(AppState.self) private var state
     @State private var isComposerFocused = false
     @State private var isComposerComposing = false
     @State private var composerEditorHeight: CGFloat = 44
-    @State private var activePopover: ComposerPopover? = nil
+    @State private var showAsOfPopover = false
     @State private var isModeTriggerHovering = false
+    @State private var isReasoningTriggerHovering = false
     @State private var isModelTriggerHovering = false
 
     private var configuredProviders: [ProviderPresetDTO] {
@@ -50,27 +38,10 @@ struct ChatView: View {
         return state.messages.isEmpty ? "新对话" : "当前对话"
     }
 
-    private func togglePopover(_ target: ComposerPopover) {
-        let next: ComposerPopover? = (activePopover == target) ? nil : target
-        if next != nil {
-            NSApp.keyWindow?.makeFirstResponder(nil)
-        }
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
-            activePopover = next
-        }
-    }
-
-    private func dismissPopover() {
-        guard activePopover != nil else { return }
-        withAnimation(.spring(response: 0.20, dampingFraction: 0.90)) {
-            activePopover = nil
-        }
-    }
-
     private func submitComposer() {
         let trimmed = state.chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !state.isStreaming, !trimmed.isEmpty else { return }
-        dismissPopover()
+        showAsOfPopover = false
         Task { await state.sendChat() }
     }
 
@@ -145,45 +116,169 @@ struct ChatView: View {
         .frame(height: Theme.headerHeight)
     }
 
-    private var composerModeTrigger: some View {
-        let isOpen = activePopover == .mode
-        return Button {
-            togglePopover(.mode)
+    // MARK: Native Anchored Composer Menus
+
+    private var composerModeMenu: some View {
+        Menu {
+            Section("对话模式") {
+                ForEach(ChatMode.allCases) { mode in
+                    Toggle(
+                        isOn: Binding(
+                            get: { state.chatMode == mode },
+                            set: { isOn in
+                                if isOn { state.chatMode = mode }
+                            }
+                        )
+                    ) {
+                        Text(mode.label)
+                        Text(mode.shortSubtitle)
+                        Image(systemName: mode.icon)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                Task { await state.startGuidedInterview(focusSlot: nil) }
+            } label: {
+                Text("让顾问主动发起冷启动访谈…")
+                Text("由顾问先提 1～2 个温和问题，逐步建档")
+                Image(systemName: "mic.badge.plus")
+            }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: state.chatMode.icon)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isOpen ? Theme.accentInk : Theme.accent)
+                    .foregroundStyle(Theme.accentInk)
                 Text(state.chatMode.label)
                     .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(isOpen ? Theme.accentInk : Theme.textPrimary)
+                    .foregroundStyle(Theme.accentInk)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8.5, weight: .semibold))
-                    .foregroundStyle(isOpen ? Theme.accentInk.opacity(0.75) : Theme.textTertiary)
+                    .foregroundStyle(Theme.accentInk.opacity(0.68))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(isOpen ? Theme.selectionFill : (isModeTriggerHovering ? Theme.selectionFill.opacity(0.95) : Theme.selectionFill))
-            )
+            .background(Capsule().fill(Theme.selectionFill))
             .overlay(
                 Capsule()
-                    .strokeBorder(isOpen ? Theme.accentBorder : (isModeTriggerHovering ? Theme.accentBorder.opacity(0.5) : .clear), lineWidth: 0.85)
+                    .strokeBorder(isModeTriggerHovering ? Theme.accentBorder : .clear, lineWidth: 0.85)
             )
             .contentShape(Capsule())
         }
+        .menuStyle(.button)
         .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .onHover { isModeTriggerHovering = $0 }
         .help("切换对话模式：日常倾诉 / 9步决策 / 冷启动访谈 / 周期反思")
     }
 
-    private var composerModelTrigger: some View {
+    private var composerReasoningMenu: some View {
+        let supported = activeProvider?.supportsReasoningEffort ?? true
+        let current = state.reasoningEffort
+        let presetDefault = activeProvider?.defaultReasoningEffort ?? .auto
+        let isCustomActive = supported && current.isExplicit && current != .none
+        let pillText: String = {
+            guard supported else { return "不支持" }
+            if current == .auto && presetDefault != .auto {
+                return "自动·\(presetDefault.pillLabel)"
+            }
+            return current.pillLabel
+        }()
+
+        return Menu {
+            Section("思考强度") {
+                ForEach(ReasoningEffort.allCases) { effort in
+                    let sub: String = {
+                        if effort == .auto && presetDefault != .auto {
+                            return "遵循当前模型预设（\(presetDefault.label)）"
+                        }
+                        return effort.subtitle
+                    }()
+                    Toggle(
+                        isOn: Binding(
+                            get: { state.reasoningEffort == effort },
+                            set: { isOn in
+                                if isOn { state.setReasoningEffort(effort) }
+                            }
+                        )
+                    ) {
+                        Text(effort.label)
+                        Text(sub)
+                        Image(systemName: effort.menuIcon)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4.5) {
+                Image(systemName: supported ? current.pillIcon : "brain")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(
+                        !supported
+                        ? Theme.textTertiary
+                        : (isCustomActive ? Theme.accentInk : Theme.textSecondary)
+                    )
+                Text(pillText)
+                    .font(.system(size: 11.5, weight: isCustomActive ? .semibold : .medium))
+                    .foregroundStyle(
+                        !supported
+                        ? Theme.textTertiary
+                        : (isCustomActive ? Theme.accentInk : (isReasoningTriggerHovering ? Theme.textPrimary : Theme.textSecondary))
+                    )
+                    .lineLimit(1)
+                if supported {
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(isCustomActive ? Theme.accentInk.opacity(0.68) : Theme.textTertiary)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(
+                        !supported
+                        ? Theme.surfaceSubtle.opacity(0.55)
+                        : (isCustomActive
+                           ? Theme.selectionFill
+                           : (isReasoningTriggerHovering ? Theme.hoverFill.opacity(0.92) : Theme.surfaceSubtle.opacity(0.85)))
+                    )
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        supported && isCustomActive
+                        ? Theme.accentBorder.opacity(isReasoningTriggerHovering ? 1 : 0.55)
+                        : (supported && isReasoningTriggerHovering ? Theme.borderSubtle : .clear),
+                        lineWidth: 0.8
+                    )
+            )
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(!supported)
+        .onHover { isReasoningTriggerHovering = $0 }
+        .help(
+            supported
+            ? "思考强度：\(current.label)（\(current.subtitle)）"
+            : "当前模型（\(activeProvider?.displayModelName ?? "")）不支持调节思考强度"
+        )
+    }
+
+    private var composerModelMenu: some View {
         Group {
-            if state.config != nil {
-                let isOpen = activePopover == .model
+            if let cfg = state.config {
                 let isReady = activeProvider?.isConfigured == true
+                let chatgptConnected = cfg.chatgptOauth?.connected == true
+                let chatgptPlan = cfg.chatgptOauth?.planType ?? ""
+                let chatgptModels = cfg.chatgptOauth?.availableModels ?? []
+                let currentChatGPTModel = cfg.providers.first(where: { $0.kind == "chatgpt_oauth" })?.model ?? ""
                 let labelText: String = {
                     if let p = activeProvider, p.isConfigured {
                         return p.displayModelName
@@ -191,44 +286,121 @@ struct ChatView: View {
                     return configuredProviders.isEmpty ? "未配置模型" : (activeProvider?.displayModelName ?? "选择模型")
                 }()
 
-                Button {
-                    togglePopover(.model)
+                Menu {
+                    if configuredProviders.isEmpty {
+                        Section("已配置模型") {
+                            Text("暂无已配置模型（请先填写 Key 或授权）")
+                        }
+                        if !chatgptConnected {
+                            Button {
+                                state.openModelsSettings()
+                                Task {
+                                    await state.startChatGPTLogin(forceRegister: false, openBrowser: true)
+                                }
+                            } label: {
+                                Text("使用 ChatGPT 授权登录…")
+                                Image(systemName: "person.badge.key.fill")
+                            }
+                        }
+                    } else {
+                        Section("已配置模型（\(configuredProviders.count)）") {
+                            ForEach(configuredProviders) { provider in
+                                let badge: String? = {
+                                    if provider.kind == "chatgpt_oauth", !chatgptPlan.isEmpty {
+                                        return chatgptPlan.uppercased()
+                                    }
+                                    if configuredProviders.count > 1 && provider.id == cfg.activeProviderId {
+                                        return "默认"
+                                    }
+                                    return nil
+                                }()
+                                let subtitleText = [provider.name, badge]
+                                    .compactMap { $0 }
+                                    .filter { !$0.isEmpty }
+                                    .joined(separator: " · ")
+
+                                Toggle(
+                                    isOn: Binding(
+                                        get: { state.selectedProviderId == provider.id },
+                                        set: { isOn in
+                                            if isOn { state.selectedProviderId = provider.id }
+                                        }
+                                    )
+                                ) {
+                                    Text(provider.displayModelName)
+                                    Text(subtitleText)
+                                    Image(systemName: provider.kindIcon)
+                                }
+                            }
+                        }
+
+                        if chatgptConnected && chatgptModels.count > 1 {
+                            Menu {
+                                ForEach(chatgptModels) { opt in
+                                    Toggle(
+                                        isOn: Binding(
+                                            get: {
+                                                activeProvider?.kind == "chatgpt_oauth"
+                                                && currentChatGPTModel.trimmingCharacters(in: .whitespacesAndNewlines) == opt.slug
+                                            },
+                                            set: { isOn in
+                                                if isOn {
+                                                    Task { await state.switchChatGPTModel(opt.slug) }
+                                                }
+                                            }
+                                        )
+                                    ) {
+                                        Text(opt.displayName)
+                                        if opt.displayName != opt.slug {
+                                            Text(opt.slug)
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label("切换 ChatGPT 订阅模型", systemImage: "sparkles")
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Button {
+                        state.openModelsSettings()
+                    } label: {
+                        Text("配置模型与授权…")
+                        Image(systemName: "slider.horizontal.3")
+                    }
                 } label: {
                     HStack(spacing: 5.5) {
                         Circle()
                             .fill(isReady ? Theme.success : Theme.warning)
                             .frame(width: 6, height: 6)
                         Text(labelText)
-                            .font(.system(size: 11.5, weight: isOpen ? .semibold : .medium))
-                            .foregroundStyle(isOpen ? Theme.accentInk : (isModelTriggerHovering ? Theme.textPrimary : Theme.textSecondary))
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(isModelTriggerHovering ? Theme.textPrimary : Theme.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 8.5, weight: .semibold))
-                            .foregroundStyle(isOpen ? Theme.accentInk.opacity(0.75) : Theme.textTertiary)
+                            .foregroundStyle(Theme.textTertiary)
                     }
                     .padding(.horizontal, 9.5)
                     .padding(.vertical, 5)
                     .background(
                         Capsule()
-                            .fill(
-                                isOpen
-                                ? Theme.selectionFill
-                                : (isModelTriggerHovering ? Theme.hoverFill.opacity(0.92) : Theme.surfaceSubtle.opacity(0.85))
-                            )
+                            .fill(isModelTriggerHovering ? Theme.hoverFill.opacity(0.92) : Theme.surfaceSubtle.opacity(0.85))
                     )
                     .overlay(
                         Capsule()
-                            .strokeBorder(
-                                isOpen ? Theme.accentBorder : (isModelTriggerHovering ? Theme.borderSubtle : .clear),
-                                lineWidth: 0.8
-                            )
+                            .strokeBorder(isModelTriggerHovering ? Theme.borderSubtle : .clear, lineWidth: 0.8)
                     )
                     .contentShape(Capsule())
                 }
+                .menuStyle(.button)
                 .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .frame(maxWidth: 168)
                 .onHover { isModelTriggerHovering = $0 }
-                .frame(maxWidth: 190)
                 .help(activeProvider.map { "\($0.name) · \($0.displayModelName)" } ?? "选择已配置的模型")
             }
         }
@@ -238,13 +410,13 @@ struct ChatView: View {
 
     @ViewBuilder
     private func chatColumn(canShowInspector: Bool) -> some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-                toolbar(canShowInspector: canShowInspector)
+        VStack(spacing: 0) {
+            toolbar(canShowInspector: canShowInspector)
 
+            ZStack(alignment: .bottom) {
                 if state.messages.isEmpty {
                     Color.clear
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -272,115 +444,17 @@ struct ChatView: View {
                         }
                     }
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if activePopover != nil {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        dismissPopover()
-                    }
-                    .zIndex(10)
-
-                Button("") {
-                    dismissPopover()
-                }
-                .keyboardShortcut(.cancelAction)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
-            }
-
-            VStack(spacing: 8) {
-                if let popover = activePopover {
-                    floatingPopoverRow(for: popover)
-                        .transition(
-                            .asymmetric(
-                                insertion: .opacity
-                                    .combined(with: .scale(scale: 0.96, anchor: popover.anchor))
-                                    .combined(with: .offset(y: 6)),
-                                removal: .opacity
-                                    .combined(with: .scale(scale: 0.97, anchor: popover.anchor))
-                            )
-                        )
-                }
 
                 composer
+                    .frame(maxWidth: 760)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 18)
             }
-            .frame(maxWidth: 760)
-            .padding(.horizontal, 28)
-            .padding(.bottom, 18)
-            .zIndex(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: isComposerFocused) { _, focused in
-            if focused && activePopover != nil {
-                dismissPopover()
-            }
-        }
         .onChange(of: state.currentSessionId) { _, _ in
-            if activePopover != nil {
-                dismissPopover()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func floatingPopoverRow(for popover: ComposerPopover) -> some View {
-        switch popover {
-        case .model:
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                ComposerModelPopover(
-                    providers: configuredProviders,
-                    selectedProviderId: state.selectedProviderId,
-                    defaultProviderId: state.config?.activeProviderId ?? "",
-                    chatgptPlanType: state.config?.chatgptOauth?.planType ?? "",
-                    chatgptConnected: state.config?.chatgptOauth?.connected == true,
-                    onSelect: { provider in
-                        state.selectedProviderId = provider.id
-                        dismissPopover()
-                    },
-                    onOpenSettings: {
-                        dismissPopover()
-                        state.openModelsSettings()
-                    },
-                    onStartChatGPTLogin: {
-                        dismissPopover()
-                        state.openModelsSettings()
-                        Task {
-                            await state.startChatGPTLogin(forceRegister: false, openBrowser: true)
-                        }
-                    }
-                )
-            }
-            .padding(.trailing, 4)
-
-        case .mode:
-            HStack(spacing: 0) {
-                ComposerModePopover(
-                    selectedMode: state.chatMode,
-                    onSelect: { mode in
-                        state.chatMode = mode
-                        dismissPopover()
-                    },
-                    onStartInterview: {
-                        dismissPopover()
-                        Task { await state.startGuidedInterview(focusSlot: nil) }
-                    }
-                )
-                Spacer(minLength: 0)
-            }
-            .padding(.leading, 4)
-
-        case .context:
-            HStack(spacing: 0) {
-                ChatContextOptionsPopover()
-                    .environment(state)
-                Spacer(minLength: 0)
-            }
-            .padding(.leading, 4)
+            showAsOfPopover = false
         }
     }
 
@@ -412,16 +486,20 @@ struct ChatView: View {
             }
 
             HStack(spacing: 5) {
-                composerModeTrigger
+                composerModeMenu
 
                 ComposerChip(
                     icon: state.useAsOfDate ? "calendar.badge.clock" : "calendar",
                     text: state.useAsOfDate ? "回溯 \(formattedAsOfShort)" : "回溯",
-                    isOn: state.useAsOfDate || activePopover == .context
+                    isOn: state.useAsOfDate || showAsOfPopover
                 ) {
-                    togglePopover(.context)
+                    showAsOfPopover.toggle()
                 }
                 .help("按历史日期回溯：仅检索该日期之前的记忆")
+                .popover(isPresented: $showAsOfPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                    AsOfDatePopover(isPresented: $showAsOfPopover)
+                        .environment(state)
+                }
 
                 ComposerChip(
                     icon: state.allowSensitive ? "lock.open" : "lock.shield",
@@ -439,7 +517,7 @@ struct ChatView: View {
                         text: state.isExtractingProposals ? "提炼中…" : "提炼记忆",
                         isOn: false
                     ) {
-                        dismissPopover()
+                        showAsOfPopover = false
                         Task { await state.extractProposals() }
                     }
                     .disabled(state.isExtractingProposals || state.isStreaming)
@@ -448,7 +526,9 @@ struct ChatView: View {
 
                 Spacer(minLength: 6)
 
-                composerModelTrigger
+                composerReasoningMenu
+
+                composerModelMenu
 
                 let canSend = !state.isStreaming && !state.chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 Button(action: submitComposer) {
@@ -551,8 +631,36 @@ private struct ChatInspectorPanel: View {
                 // Top spacer aligned with toolbar
                 Color.clear.frame(height: 6)
 
-                GlassSectionHeader(title: "检索上下文")
+                GlassSectionHeader(title: "对话与检索")
                 VStack(spacing: 0) {
+                    HStack(spacing: 9) {
+                        Image(systemName: "brain")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 16)
+                        Text("思考强度")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Theme.textPrimary)
+                        Spacer()
+                        Picker(
+                            "",
+                            selection: Binding(
+                                get: { state.reasoningEffort },
+                                set: { state.setReasoningEffort($0) }
+                            )
+                        ) {
+                            ForEach(ReasoningEffort.allCases) { level in
+                                Text(level.label).tag(level)
+                            }
+                        }
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .frame(width: 108)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+
+                    Divider().padding(.leading, 36).opacity(0.6)
                     InspectorToggleRow(icon: "calendar", title: "按历史日期回溯", isOn: $state.useAsOfDate)
                     if state.useAsOfDate {
                         HStack {
@@ -560,7 +668,7 @@ private struct ChatInspectorPanel: View {
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.textSecondary)
                             Spacer()
-                            DatePicker("", selection: $state.asOfDate, displayedComponents: .date)
+                            DatePicker("", selection: $state.asOfDate, in: ...Date(), displayedComponents: .date)
                                 .labelsHidden()
                                 .datePickerStyle(.compact)
                                 .controlSize(.small)
@@ -1033,455 +1141,128 @@ private struct ComposerTextEditor: NSViewRepresentable {
     }
 }
 
-// MARK: - Redesigned Floating Glass Composer Popovers
+// MARK: - Anchored Historical Backfill Popover
 
-private struct ComposerModelPopover: View {
-    let providers: [ProviderPresetDTO]
-    let selectedProviderId: String
-    let defaultProviderId: String
-    let chatgptPlanType: String
-    let chatgptConnected: Bool
-    let onSelect: (ProviderPresetDTO) -> Void
-    let onOpenSettings: () -> Void
-    let onStartChatGPTLogin: () -> Void
+private struct AsOfDatePopover: View {
+    @Environment(AppState.self) private var state
+    @Binding var isPresented: Bool
+
+    private static let presets: [(label: String, component: Calendar.Component, value: Int)] = [
+        ("1 周前", .day, -7),
+        ("1 个月前", .month, -1),
+        ("3 个月前", .month, -3),
+        ("1 年前", .year, -1),
+    ]
+
+    private func applyPreset(component: Calendar.Component, value: Int) {
+        if let target = Calendar.current.date(byAdding: component, value: value, to: Date()) {
+            state.asOfDate = target
+            state.useAsOfDate = true
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(spacing: 6) {
-                Text("已配置模型")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
-                Spacer()
-                if !providers.isEmpty {
-                    Text("\(providers.count) 个可用")
-                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+        @Bindable var state = state
+
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: state.useAsOfDate ? "calendar.badge.clock" : "calendar")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(state.useAsOfDate ? Theme.accentInk : Theme.accent)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(state.useAsOfDate ? Theme.selectionFill : Theme.surfaceSubtle)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("按历史日期回溯")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("仅检索该日期之前的记忆，还原当时视角")
+                        .font(.system(size: 11))
                         .foregroundStyle(Theme.textTertiary)
                 }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 11)
-            .padding(.bottom, 7)
-
-            if providers.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top, spacing: 10) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Theme.warningSoft)
-                                .frame(width: 30, height: 30)
-                            Image(systemName: "key.horizontal")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Theme.warning)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2.5) {
-                            Text("暂无已配置模型")
-                                .font(.system(size: 12.5, weight: .semibold))
-                                .foregroundStyle(Theme.textPrimary)
-                            Text("请先在设置中填写 API Key 或完成 ChatGPT 订阅授权。")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.textTertiary)
-                                .lineSpacing(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-
-                    if !chatgptConnected {
-                        Button(action: onStartChatGPTLogin) {
-                            Label("使用 ChatGPT 授权登录", systemImage: "person.badge.key.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(SprucePrimaryButtonStyle(compact: true))
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-            } else {
-                let listContent = VStack(spacing: 3) {
-                    ForEach(providers) { provider in
-                        let isSelected = provider.id == selectedProviderId
-                        let tag: String? = {
-                            if provider.kind == "chatgpt_oauth", !chatgptPlanType.isEmpty {
-                                return chatgptPlanType.uppercased()
-                            }
-                            if providers.count > 1 && provider.id == defaultProviderId {
-                                return "默认"
-                            }
-                            return nil
-                        }()
-
-                        ComposerModelPopoverRow(
-                            provider: provider,
-                            badgeText: tag,
-                            isSelected: isSelected
-                        ) {
-                            onSelect(provider)
-                        }
-                    }
-                }
-                .padding(.horizontal, 6)
-
-                if providers.count > 5 {
-                    ScrollView(.vertical, showsIndicators: true) {
-                        listContent
-                    }
-                    .frame(maxHeight: 264)
-                } else {
-                    listContent
-                }
-            }
-
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.65))
-                .frame(height: 0.5)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-
-            PopoverFooterActionRow(
-                icon: "slider.horizontal.3",
-                title: "配置模型与授权…",
-                action: onOpenSettings
-            )
-            .padding(.horizontal, 6)
-            .padding(.bottom, 6)
-        }
-        .frame(width: 292)
-        .glassPopover(cornerRadius: 16)
-    }
-}
-
-private struct ComposerModelPopoverRow: View {
-    let provider: ProviderPresetDTO
-    let badgeText: String?
-    let isSelected: Bool
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isSelected ? Theme.cardSolid : Theme.surfaceSubtle)
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(isSelected ? Theme.accentBorder.opacity(0.65) : .clear, lineWidth: 0.7)
-                        )
-                    Image(systemName: provider.kindIcon)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(isSelected || isHovering ? Theme.accentInk : Theme.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(provider.displayModelName)
-                            .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
-                            .foregroundStyle(isSelected ? Theme.accentInk : Theme.textPrimary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-
-                        if let badgeText {
-                            Text(badgeText)
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(isSelected ? Theme.accentInk : Theme.textTertiary)
-                                .padding(.horizontal, 5.5)
-                                .padding(.vertical, 1.5)
-                                .background(
-                                    Capsule()
-                                        .fill(isSelected ? Theme.cardSolid.opacity(0.85) : Theme.surfaceSubtle)
-                                )
-                        }
-                    }
-
-                    Text(provider.name)
-                        .font(.system(size: 11))
-                        .foregroundStyle(isSelected ? Theme.accentInk.opacity(0.75) : Theme.textTertiary)
-                        .lineLimit(1)
-                }
 
                 Spacer(minLength: 6)
 
-                if isSelected {
-                    ZStack {
-                        Circle()
-                            .fill(Theme.accent.opacity(0.18))
-                            .frame(width: 20, height: 20)
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Theme.accentInk)
+                Toggle("", isOn: $state.useAsOfDate)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+
+            HStack(spacing: 6) {
+                ForEach(Self.presets, id: \.label) { preset in
+                    AsOfPresetPill(title: preset.label) {
+                        applyPreset(component: preset.component, value: preset.value)
                     }
                 }
             }
-            .padding(.horizontal, 8)
+
+            HStack {
+                Text("截止日期")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                DatePicker(
+                    "",
+                    selection: Binding(
+                        get: { state.asOfDate },
+                        set: { newDate in
+                            state.asOfDate = newDate
+                            state.useAsOfDate = true
+                        }
+                    ),
+                    in: ...Date(),
+                    displayedComponents: .date
+                )
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        isSelected
-                        ? Theme.selectionFill
-                        : (isHovering ? Theme.hoverFill.opacity(0.75) : .clear)
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.accentBorder.opacity(0.45) : .clear, lineWidth: 0.65)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-    }
-}
+            .background(Theme.surfaceSubtle.opacity(0.75), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
-private struct ComposerModePopover: View {
-    let selectedMode: ChatMode
-    let onSelect: (ChatMode) -> Void
-    let onStartInterview: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("对话模式")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.horizontal, 12)
-                .padding(.top, 11)
-                .padding(.bottom, 7)
-
-            VStack(spacing: 3) {
-                ForEach(ChatMode.allCases) { mode in
-                    ComposerModePopoverRow(
-                        mode: mode,
-                        isSelected: mode == selectedMode
-                    ) {
-                        onSelect(mode)
+            if state.useAsOfDate {
+                HStack {
+                    Spacer()
+                    Button("恢复当前时间") {
+                        state.useAsOfDate = false
+                        isPresented = false
                     }
+                    .buttonStyle(SubtleOutlineButtonStyle(compact: true))
                 }
             }
-            .padding(.horizontal, 6)
-
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.65))
-                .frame(height: 0.5)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-
-            PopoverFooterActionRow(
-                icon: "mic.badge.plus",
-                title: "让顾问主动发起冷启动访谈…",
-                action: onStartInterview
-            )
-            .padding(.horizontal, 6)
-            .padding(.bottom, 6)
         }
-        .frame(width: 272)
-        .glassPopover(cornerRadius: 16)
+        .padding(14)
+        .frame(width: 296)
     }
 }
 
-private struct ComposerModePopoverRow: View {
-    let mode: ChatMode
-    let isSelected: Bool
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isSelected ? Theme.cardSolid : Theme.surfaceSubtle)
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(isSelected ? Theme.accentBorder.opacity(0.65) : .clear, lineWidth: 0.7)
-                        )
-                    Image(systemName: mode.icon)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(isSelected || isHovering ? Theme.accentInk : Theme.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(mode.label)
-                        .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Theme.accentInk : Theme.textPrimary)
-                        .lineLimit(1)
-                    Text(mode.shortSubtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(isSelected ? Theme.accentInk.opacity(0.75) : Theme.textTertiary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 6)
-
-                if isSelected {
-                    ZStack {
-                        Circle()
-                            .fill(Theme.accent.opacity(0.18))
-                            .frame(width: 20, height: 20)
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Theme.accentInk)
-                    }
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        isSelected
-                        ? Theme.selectionFill
-                        : (isHovering ? Theme.hoverFill.opacity(0.75) : .clear)
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.accentBorder.opacity(0.45) : .clear, lineWidth: 0.65)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-    }
-}
-
-private struct PopoverFooterActionRow: View {
-    let icon: String
+private struct AsOfPresetPill: View {
     let title: String
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isHovering ? Theme.accentInk : Theme.textSecondary)
-                    .frame(width: 18)
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isHovering ? Theme.textPrimary : Theme.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(isHovering ? Theme.hoverFill.opacity(0.78) : .clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isHovering ? Theme.accentInk : Theme.textSecondary)
+                .padding(.horizontal, 8.5)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule().fill(isHovering ? Theme.selectionFill : Theme.surfaceSubtle)
+                )
+                .overlay(
+                    Capsule().strokeBorder(isHovering ? Theme.accentBorder.opacity(0.6) : .clear, lineWidth: 0.7)
+                )
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-    }
-}
-
-// MARK: - Context Options Popover
-
-private struct ChatContextOptionsPopover: View {
-    @Environment(AppState.self) private var state
-
-    var body: some View {
-        @Bindable var state = state
-
-        VStack(alignment: .leading, spacing: 0) {
-            Text("检索上下文")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.horizontal, 14)
-                .padding(.top, 11)
-                .padding(.bottom, 8)
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 10) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(state.useAsOfDate ? Theme.selectionFill : Theme.surfaceSubtle)
-                            .frame(width: 28, height: 28)
-                        Image(systemName: state.useAsOfDate ? "calendar.badge.clock" : "calendar")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(state.useAsOfDate ? Theme.accentInk : Theme.accent)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("按历史日期回溯")
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(Theme.textPrimary)
-                        Text("仅检索该日期之前的记忆，还原当时视角")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-
-                    Spacer(minLength: 6)
-
-                    Toggle("", isOn: $state.useAsOfDate)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                }
-
-                if state.useAsOfDate {
-                    HStack {
-                        Text("截止日期")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.textSecondary)
-                        Spacer()
-                        DatePicker("", selection: $state.asOfDate, displayedComponents: .date)
-                            .labelsHidden()
-                            .datePickerStyle(.compact)
-                            .controlSize(.small)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(Theme.surfaceSubtle.opacity(0.7), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 12)
-
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.65))
-                .frame(height: 0.5)
-                .padding(.horizontal, 12)
-
-            HStack(alignment: .center, spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(state.allowSensitive ? Theme.warningSoft : Theme.surfaceSubtle)
-                        .frame(width: 28, height: 28)
-                    Image(systemName: state.allowSensitive ? "lock.open" : "lock.shield")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(state.allowSensitive ? Theme.warning : Theme.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("本轮允许敏感记忆")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary)
-                    Text("默认拦截 privacy: sensitive，开启仅本轮放行")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                }
-
-                Spacer(minLength: 6)
-
-                Toggle("", isOn: $state.allowSensitive)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .tint(state.allowSensitive ? Theme.warning : Theme.accent)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-        }
-        .frame(width: 312)
-        .glassPopover(cornerRadius: 16)
     }
 }
 
@@ -1612,7 +1393,11 @@ private struct MessageRowView: View {
                     HStack(spacing: 9) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("正在结合你的记忆思考…")
+                        Text(
+                            (state.reasoningEffort == .high || state.reasoningEffort == .xhigh)
+                            ? "正在结合你的记忆深入思考…"
+                            : "正在结合你的记忆思考…"
+                        )
                             .font(.system(size: 13.5))
                             .foregroundStyle(Theme.textSecondary)
                     }
