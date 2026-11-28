@@ -280,43 +280,27 @@ private struct UnifiedSidebarView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Footer status
+            // Footer actions
             Rectangle()
                 .fill(Theme.borderSubtle.opacity(0.7))
                 .frame(height: 0.5)
 
             HStack(spacing: 6) {
-                Button {
-                    state.openBackendSettings()
-                } label: {
-                    HStack(spacing: 7) {
-                        Circle()
-                            .fill(state.isOnline ? Theme.success : Theme.warning)
-                            .frame(width: 7, height: 7)
-                            .shadow(color: (state.isOnline ? Theme.success : Theme.warning).opacity(0.5), radius: 3)
-                        Text(state.isOnline ? "VPS 远程" : "未连接")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
+                if !state.isOnline {
+                    Button {
+                        state.openBackendSettings()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(Theme.warning)
+                                .frame(width: 6, height: 6)
+                            Text("未连接")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.warning)
+                        }
                     }
-                    .padding(.leading, 8)
-                    .padding(.trailing, 10)
-                    .padding(.vertical, 5)
-                    .glassCapsule()
-                    .contentShape(Capsule())
-                    .fixedSize()
-                }
-                .buttonStyle(.plain)
-                .help("点击配置远程 VPS 服务器与备份")
-
-                if let stats = state.health?.stats {
-                    let emb = state.health?.index?.embeddedDocs ?? 0
-                    Text("\(stats.total) 记忆 · \(emb) 向量")
-                        .font(.system(size: 10.5).monospacedDigit())
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .layoutPriority(-1)
+                    .buttonStyle(.plain)
+                    .help("点击配置远程 VPS 服务器")
                 }
 
                 Spacer(minLength: 0)
@@ -339,8 +323,8 @@ private struct UnifiedSidebarView: View {
                 .buttonStyle(GhostIconButtonStyle(size: 24))
                 .help("刷新状态与记忆 (⌘R)")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
     }
 }

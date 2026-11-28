@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from .chatgpt_oauth import get_public_oauth_status
 
 # 产品版本号（macOS 客户端与 VPS 后端统一），由 bump-version.sh 维护
-APP_VERSION = "0.14"
+APP_VERSION = "0.15"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_VAULT_PATH = str(Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "决策")

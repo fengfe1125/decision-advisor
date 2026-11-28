@@ -41,7 +41,7 @@ struct ChatView: View {
             let canShowInspector = geo.size.width > 980
             let showInspector = state.isInspectorVisible && canShowInspector
             HStack(spacing: 0) {
-                chatColumn(canShowInspector: canShowInspector, compactModes: geo.size.width - (showInspector ? Theme.inspectorWidth : 0) < 760)
+                chatColumn(canShowInspector: canShowInspector)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if showInspector {
@@ -59,7 +59,7 @@ struct ChatView: View {
     // MARK: Toolbar
 
     @ViewBuilder
-    private func toolbar(canShowInspector: Bool, compactModes: Bool) -> some View {
+    private func toolbar(canShowInspector: Bool) -> some View {
         @Bindable var state = state
 
         ZStack {
@@ -68,32 +68,23 @@ struct ChatView: View {
             HStack(spacing: 10) {
                 SidebarRevealButtons(showNewChat: true)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(currentTitle)
-                        .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                    Text(state.messages.isEmpty ? state.chatMode.label : "\(state.chatMode.label) · \(state.messages.count) 条消息")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
+                if !state.messages.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(currentTitle)
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                        Text("· \(state.messages.count) 条消息")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                    }
+                    .padding(.leading, state.isSidebarVisible ? 10 : 0)
+                    .frame(minWidth: 60, alignment: .leading)
+                    .layoutPriority(-1)
                 }
-                .padding(.leading, state.isSidebarVisible ? 10 : 0)
-                .frame(minWidth: 60, alignment: .leading)
-                .layoutPriority(-1)
 
                 Spacer(minLength: 8)
-
-                UnifiedSegmentedControl(
-                    options: ChatMode.allCases,
-                    selection: $state.chatMode,
-                    label: { $0.label },
-                    icon: compactModes ? nil : { $0.icon }
-                )
-
-                Spacer(minLength: 8)
-
-                modelMenu
 
                 if canShowInspector {
                     Button {
@@ -116,7 +107,50 @@ struct ChatView: View {
         .frame(height: Theme.headerHeight)
     }
 
-    private var modelMenu: some View {
+    private var composerModeMenu: some View {
+        Menu {
+            ForEach(ChatMode.allCases) { mode in
+                Button {
+                    state.chatMode = mode
+                } label: {
+                    HStack {
+                        Label(mode.label, systemImage: mode.icon)
+                        if mode == state.chatMode {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button {
+                Task { await state.startGuidedInterview(focusSlot: nil) }
+            } label: {
+                Label("让顾问主动发起冷启动访谈…", systemImage: "mic.badge.plus")
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: state.chatMode.icon)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+                Text(state.chatMode.label)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Theme.selectionFill, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .help("切换对话模式：日常倾诉 / 9步决策 / 冷启动访谈 / 周期反思")
+    }
+
+    private var composerModelMenu: some View {
         Group {
             if let providers = state.config?.providers, !providers.isEmpty {
                 Menu {
@@ -136,37 +170,37 @@ struct ChatView: View {
                     Divider()
                     if state.config?.chatgptOauth?.connected != true {
                         Button("使用 ChatGPT 账号授权登录…") {
-                            state.selectSection(.settings)
+                            state.openModelsSettings()
                             Task {
                                 await state.startChatGPTLogin(forceRegister: false, openBrowser: true)
                             }
                         }
                     }
                     Button("配置模型与授权…") {
-                        state.selectSection(.settings)
+                        state.openModelsSettings()
                     }
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Circle()
                             .fill(activeProvider?.hasApiKey == true ? Theme.success : Theme.warning)
-                            .frame(width: 7, height: 7)
+                            .frame(width: 6, height: 6)
                         Text(activeProvider.map { $0.model.isEmpty ? $0.name : $0.model } ?? "选择模型")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.textPrimary)
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(.system(size: 8.5, weight: .semibold))
                             .foregroundStyle(Theme.textTertiary)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .glassCapsule()
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Theme.surfaceSubtle.opacity(0.85), in: Capsule())
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
-                .frame(maxWidth: 190)
+                .frame(maxWidth: 165)
                 .help(activeProvider.map { "\($0.name) · \($0.model)" } ?? "选择模型")
             }
         }
@@ -175,39 +209,36 @@ struct ChatView: View {
     // MARK: Main Column
 
     @ViewBuilder
-    private func chatColumn(canShowInspector: Bool, compactModes: Bool) -> some View {
+    private func chatColumn(canShowInspector: Bool) -> some View {
         @Bindable var state = state
 
         VStack(spacing: 0) {
-            toolbar(canShowInspector: canShowInspector, compactModes: compactModes)
+            toolbar(canShowInspector: canShowInspector)
 
-            ZStack(alignment: .bottom) {
-                GeometryReader { geo in
+            if state.messages.isEmpty {
+                VStack(spacing: 0) {
+                    Spacer()
+                    composer
+                    Spacer()
+                    Spacer().frame(maxHeight: 36)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ZStack(alignment: .bottom) {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            if state.messages.isEmpty {
-                                WelcomeHeroView(onSelectStarter: { mode, prompt in
-                                    state.chatMode = mode
-                                    state.chatInput = prompt
-                                    isComposerFocused = true
-                                })
-                                .frame(maxWidth: .infinity, minHeight: max(360, geo.size.height - 150))
-                                .padding(.horizontal, 28)
-                                .padding(.bottom, 140)
-                            } else {
-                                LazyVStack(alignment: .leading, spacing: 24) {
-                                    ForEach(state.messages) { msg in
-                                        MessageRowView(message: msg)
-                                            .id(msg.id)
-                                    }
-                                    Color.clear.frame(height: 8).id("chat-bottom-anchor")
+                            LazyVStack(alignment: .leading, spacing: 24) {
+                                ForEach(state.messages) { msg in
+                                    MessageRowView(message: msg)
+                                        .id(msg.id)
                                 }
-                                .frame(maxWidth: 760)
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, 28)
-                                .padding(.top, 14)
-                                .padding(.bottom, 150)
+                                Color.clear.frame(height: 8).id("chat-bottom-anchor")
                             }
+                            .frame(maxWidth: 760)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 28)
+                            .padding(.top, 14)
+                            .padding(.bottom, 150)
                         }
                         .scrollIndicators(.automatic)
                         .onChange(of: state.messages.count) { _, _ in
@@ -219,11 +250,11 @@ struct ChatView: View {
                             proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
                         }
                     }
-                }
 
-                composer
+                    composer
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -256,7 +287,9 @@ struct ChatView: View {
                     .animation(.easeOut(duration: 0.12), value: composerEditorHeight)
             }
 
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
+                composerModeMenu
+
                 ComposerChip(
                     icon: state.useAsOfDate ? "calendar.badge.clock" : "calendar",
                     text: state.useAsOfDate ? "回溯 \(formattedAsOfShort)" : "回溯",
@@ -280,22 +313,21 @@ struct ChatView: View {
                 }
                 .help("默认拦截 privacy: sensitive 记忆，开启后仅本轮放行")
 
-                ComposerChip(
-                    icon: state.isExtractingProposals ? "hourglass" : "sparkles",
-                    text: state.isExtractingProposals ? "提炼中…" : "提炼记忆",
-                    isOn: false
-                ) {
-                    Task { await state.extractProposals() }
+                if !state.messages.isEmpty {
+                    ComposerChip(
+                        icon: state.isExtractingProposals ? "hourglass" : "sparkles",
+                        text: state.isExtractingProposals ? "提炼中…" : "提炼记忆",
+                        isOn: false
+                    ) {
+                        Task { await state.extractProposals() }
+                    }
+                    .disabled(state.isExtractingProposals || state.isStreaming)
+                    .help("从当前对话提炼记忆提案（半自动确认写入）")
                 }
-                .disabled(state.messages.isEmpty || state.isExtractingProposals || state.isStreaming)
-                .help("从当前对话提炼记忆提案（半自动确认写入 iCloud）")
 
-                Spacer()
+                Spacer(minLength: 6)
 
-                Text("⌘↩")
-                    .font(.system(size: 11, weight: .medium).monospaced())
-                    .foregroundStyle(Theme.textTertiary)
-                    .padding(.trailing, 4)
+                composerModelMenu
 
                 let canSend = !state.isStreaming && !state.chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 Button {
@@ -332,7 +364,7 @@ struct ChatView: View {
         )
         .frame(maxWidth: 760)
         .padding(.horizontal, 28)
-        .padding(.bottom, 16)
+        .padding(.bottom, state.messages.isEmpty ? 0 : 16)
     }
 }
 
@@ -666,183 +698,6 @@ private struct ChatContextOptionsPopover: View {
         }
         .padding(16)
         .frame(width: 300)
-    }
-}
-
-// MARK: - Centered Atmospheric Welcome Hero
-
-private struct WelcomeHeroView: View {
-    @Environment(AppState.self) private var state
-    let onSelectStarter: (ChatMode, String) -> Void
-
-    private struct StarterItem: Identifiable {
-        let id = UUID()
-        let mode: ChatMode
-        let icon: String
-        let title: String
-        let subtitle: String
-        let prompt: String
-    }
-
-    private let starters: [StarterItem] = [
-        StarterItem(
-            mode: .interview,
-            icon: "mic",
-            title: "开始冷启动访谈",
-            subtitle: "用 1–2 个轻松问题建立核心自我与早期重要经历",
-            prompt: "我想开始第一次冷启动访谈，请先用1-2个轻松的问题帮我建立「核心自我」和最早的重要经历。"
-        ),
-        StarterItem(
-            mode: .decision,
-            icon: "safari",
-            title: "9 步反讨好决策分析",
-            subtitle: "剥离外界期待，按结构化框架厘清真实权衡",
-            prompt: "我最近面临一个重要选择，想请你按 9 步反讨好决策流程帮我分析："
-        ),
-        StarterItem(
-            mode: .chat,
-            icon: "bubble.left",
-            title: "聊聊今天的经历与感受",
-            subtitle: "自由倾诉当下情绪，结合过往记忆温和陪伴",
-            prompt: "今天发生了一件让我感触很深的事，想先和你聊聊当时的感受："
-        ),
-        StarterItem(
-            mode: .reflect,
-            icon: "sparkles",
-            title: "整理收件箱与周期反思",
-            subtitle: "回看近期速记，梳理情绪模式与可归档洞见",
-            prompt: "请帮我读取 99-收件箱/inbox.md 和近期记忆，做一次阶段反思，看看有哪些情绪模式和值得整理入库的内容。"
-        )
-    ]
-
-    var body: some View {
-        VStack(spacing: 22) {
-            VStack(spacing: 14) {
-                CompassEmblem(size: 64)
-                    .shadow(color: Theme.accent.opacity(0.25), radius: 16, y: 8)
-
-                VStack(spacing: 7) {
-                    Text(state.chatMode.heroTitle)
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(Theme.textPrimary)
-
-                    if let stats = state.health?.stats {
-                        Text("已连接 VPS 远程记忆库（桌面与手机端互通） · \(stats.total) 篇记忆随时参与思考")
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(Theme.textSecondary)
-                    } else if !state.isOnline {
-                        Text("正在连接远程 VPS 后端（\(state.activeBaseURL)）…")
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(Theme.warning)
-                    } else {
-                        Text("基于你的长期记忆库，提供克制、清醒、连贯的个人决策陪伴")
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-            }
-
-            if let status = state.onboardingStatus {
-                VStack(alignment: .leading, spacing: 10) {
-                    CoreSelfProgressBanner(status: status) { slot in
-                        Task { await state.startGuidedInterview(focusSlot: slot.id) }
-                    }
-
-                    HStack(spacing: 8) {
-                        Button {
-                            state.openOnboardingWizard(route: "hub")
-                        } label: {
-                            Label(status.completeness < 60 ? "打开「认识我」初始化向导" : "完善个人画像", systemImage: "person.crop.circle.badge.plus")
-                        }
-                        .buttonStyle(SubtleOutlineButtonStyle(compact: true, isActive: status.completeness < 60))
-
-                        Button {
-                            state.openMemoryImportSheet()
-                        } label: {
-                            Label("导入其他 Agent 记忆", systemImage: "square.and.arrow.down.on.square")
-                        }
-                        .buttonStyle(SubtleOutlineButtonStyle(compact: true))
-
-                        Spacer()
-                    }
-                }
-                .frame(maxWidth: 680)
-            }
-
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                ForEach(starters) { item in
-                    StarterCard(
-                        icon: item.icon,
-                        title: item.title,
-                        subtitle: item.subtitle,
-                        modeLabel: item.mode.label
-                    ) {
-                        if item.mode == .interview {
-                            Task { await state.startGuidedInterview(focusSlot: nil) }
-                        } else {
-                            onSelectStarter(item.mode, item.prompt)
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: 680)
-        }
-        .padding(.vertical, 24)
-    }
-}
-
-private struct StarterCard: View {
-    let icon: String
-    let title: String
-    let subtitle: String
-    let modeLabel: String
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(isHovering ? AnyShapeStyle(Theme.selectionFill) : AnyShapeStyle(Theme.accentSoft))
-                            .frame(width: 32, height: 32)
-                        Image(systemName: icon)
-                            .font(.system(size: 13.5, weight: .medium))
-                            .foregroundStyle(isHovering ? Theme.accentInk : Theme.accent)
-                    }
-
-                    Spacer()
-
-                    Text(modeLabel)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.textTertiary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2.5)
-                        .background(Theme.surfaceSubtle.opacity(0.8), in: Capsule())
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(15)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard(cornerRadius: 16, isHovering: isHovering)
-            .offset(y: isHovering ? -1 : 0)
-            .animation(.easeOut(duration: 0.16), value: isHovering)
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
     }
 }
 

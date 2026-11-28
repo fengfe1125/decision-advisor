@@ -7,7 +7,7 @@ cd "$MACOS_DIR"
 APP_NAME="成长决策顾问"
 EXEC_NAME="DecisionAdvisor"
 BUNDLE_ID="com.sakura.decision-advisor"
-VERSION="0.14"
+VERSION="0.15"
 # CFBundleVersion 由版本号推导：0.13 -> 13，1.00 -> 100（保证单调递增）
 BUILD_NUM="$(( 10#${VERSION//./} ))"
 MIN_MACOS="14.0"

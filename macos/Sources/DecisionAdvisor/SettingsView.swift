@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
+    case profile = "个人画像"
     case models = "大模型"
     case index = "语义索引"
     case backend = "远程服务器"
@@ -14,7 +15,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @Environment(AppState.self) private var state
     @Environment(UpdateChecker.self) private var updater
-    @State private var activeTab: SettingsTab = .models
+    @State private var activeTab: SettingsTab = .profile
     @State private var expandedProviderIds: Set<String> = []
     @State private var providers: [ProviderPresetDTO] = []
     @State private var activeProviderId: String = ""
@@ -65,15 +66,7 @@ struct SettingsView: View {
                         options: SettingsTab.allCases,
                         selection: $activeTab,
                         label: { $0.rawValue },
-                        icon: { tab in
-                            switch tab {
-                            case .models: return "cpu"
-                            case .index: return "sparkle.magnifyingglass"
-                            case .backend: return "server.rack"
-                            case .snapshots: return "clock.arrow.circlepath"
-                            case .about: return "arrow.down.app"
-                            }
-                        }
+                        compact: true
                     )
 
                     Spacer()
@@ -109,6 +102,8 @@ struct SettingsView: View {
                             .id("settings-top")
 
                         switch activeTab {
+                        case .profile:
+                            profileSection
                         case .models:
                             modelsSection
                         case .index:
@@ -137,23 +132,11 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            if state.settingsPreferredTab == "backend" {
-                activeTab = .backend
-                state.settingsPreferredTab = "models"
-            } else if state.settingsPreferredTab == "about" {
-                activeTab = .about
-                state.settingsPreferredTab = "models"
-            }
+            applyPreferredTab()
             if !loadedOnce { syncFromConfig() }
         }
-        .onChange(of: state.settingsPreferredTab) { _, next in
-            if next == "backend" {
-                activeTab = .backend
-                state.settingsPreferredTab = "models"
-            } else if next == "about" {
-                activeTab = .about
-                state.settingsPreferredTab = "models"
-            }
+        .onChange(of: state.settingsPreferredTab) { _, _ in
+            applyPreferredTab()
         }
         .onChange(of: state.config?.activeProviderId) { _, _ in
             syncFromConfig()
@@ -163,8 +146,128 @@ struct SettingsView: View {
         }
         .task {
             await state.refreshHealthAndConfig()
+            await state.refreshOnboardingStatus(autoPresent: false)
             await state.refreshGitHistory()
             syncFromConfig()
+        }
+    }
+
+    private func applyPreferredTab() {
+        switch state.settingsPreferredTab {
+        case "backend":
+            activeTab = .backend
+        case "about":
+            activeTab = .about
+        case "models":
+            activeTab = .models
+        case "profile":
+            activeTab = .profile
+        default:
+            break
+        }
+        state.settingsPreferredTab = ""
+    }
+
+    // MARK: - Tab 0: Profile & Onboarding
+
+    private var profileSection: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            SettingsSectionContainer(
+                title: "个人画像与初始化",
+                subtitle: "管理你的 5 项核心自我档案、开启引导访谈或从其他 Agent 迁移记忆"
+            ) {
+                VStack(alignment: .leading, spacing: 14) {
+                    if let status = state.onboardingStatus {
+                        CoreSelfProgressBanner(status: status) { slot in
+                            Task { await state.startGuidedInterview(focusSlot: slot.id) }
+                        }
+                    } else {
+                        Text("正在读取核心自我档案状态…")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Theme.textTertiary)
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .glassCard(cornerRadius: 14)
+                    }
+
+                    HStack(spacing: 10) {
+                        Button {
+                            state.openOnboardingWizard(route: "hub")
+                        } label: {
+                            Label("完善个人画像", systemImage: "person.crop.circle.badge.plus")
+                        }
+                        .buttonStyle(SprucePrimaryButtonStyle())
+
+                        Button {
+                            state.openMemoryImportSheet()
+                        } label: {
+                            Label("导入其他 Agent 记忆", systemImage: "square.and.arrow.down.on.square")
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle())
+
+                        Button {
+                            Task { await state.startGuidedInterview(focusSlot: nil) }
+                        } label: {
+                            Label(state.isStartingInterview ? "开启中…" : "1 对 1 冷启动访谈", systemImage: "mic")
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle())
+                        .disabled(state.isStartingInterview)
+
+                        Spacer()
+                    }
+                }
+            }
+
+            SettingsSectionContainer(
+                title: "远程记忆库与连接状态",
+                subtitle: "桌面端与手机端共用 24/7 云端 VPS 记忆库与 4 路混合检索索引"
+            ) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 10) {
+                        IndexMetricTile(
+                            label: "连接状态",
+                            value: state.isOnline ? "VPS 在线" : "未连接",
+                            isText: true
+                        )
+                        IndexMetricTile(
+                            label: "记忆篇数",
+                            value: state.health.map { "\($0.stats.total)" } ?? "—"
+                        )
+                        IndexMetricTile(
+                            label: "向量已索引",
+                            value: state.health?.index.map { "\($0.embeddedDocs)" } ?? "—"
+                        )
+                    }
+
+                    HStack(spacing: 10) {
+                        Button {
+                            activeTab = .backend
+                        } label: {
+                            Label("配置远程服务器", systemImage: "server.rack")
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle(compact: true))
+
+                        Button {
+                            activeTab = .index
+                        } label: {
+                            Label("管理语义索引", systemImage: "sparkle.magnifyingglass")
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle(compact: true))
+
+                        Spacer()
+
+                        Button {
+                            Task { await state.backupRemoteVaultToLocalICloud() }
+                        } label: {
+                            Label(state.isBackingUpVault ? "备份中…" : "备份回本机 iCloud", systemImage: "icloud.and.arrow.down")
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle(compact: true))
+                        .disabled(state.isBackingUpVault || !state.isOnline)
+                    }
+                }
+                .padding(16)
+                .glassCard(cornerRadius: 16)
+            }
         }
     }
 

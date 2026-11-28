@@ -6,7 +6,7 @@ import Observation
 @Observable
 final class AppState {
     var selectedSection: AdvisorSection = .chat
-    var settingsPreferredTab: String = "models"
+    var settingsPreferredTab: String = ""
     var isSidebarVisible: Bool = true
     var isInspectorVisible: Bool = true
     var isOnline: Bool = false
@@ -140,6 +140,11 @@ final class AppState {
 
     func openBackendSettings() {
         settingsPreferredTab = "backend"
+        selectSection(.settings)
+    }
+
+    func openModelsSettings() {
+        settingsPreferredTab = "models"
         selectSection(.settings)
     }
 
@@ -454,7 +459,7 @@ final class AppState {
         do {
             let res = try await api.updateOnboardingState("dismissed")
             self.onboardingStatus = res.status
-            showBanner("已暂跳过引导，随时可在欢迎页或「记忆库」菜单重新打开")
+            showBanner("已暂跳过引导，随时可在「模型与设置 → 个人画像」或菜单栏重新打开")
         } catch {
             // Still dismiss locally even if request fails
         }
