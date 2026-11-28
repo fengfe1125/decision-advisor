@@ -3,13 +3,15 @@ import UIKit
 
 @MainActor
 enum AdvisorTheme {
-    private static func dynamic(
+    // 必须 nonisolated + @Sendable：SwiftUI 会在后台渲染线程解析动态颜色，
+    // 若闭包继承 @MainActor 隔离，Swift 6 运行时检查会直接触发 EXC_BREAKPOINT 闪退。
+    private nonisolated static func dynamic(
         light: (CGFloat, CGFloat, CGFloat),
         dark: (CGFloat, CGFloat, CGFloat),
         lightAlpha: CGFloat = 1.0,
         darkAlpha: CGFloat = 1.0
     ) -> Color {
-        Color(uiColor: UIColor { traits in
+        Color(uiColor: UIColor { @Sendable traits in
             let isDark = traits.userInterfaceStyle == .dark
             let c = isDark ? dark : light
             return UIColor(red: c.0, green: c.1, blue: c.2, alpha: isDark ? darkAlpha : lightAlpha)
