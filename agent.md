@@ -1,7 +1,7 @@
 # Agent 开发者与维护指南 (`agent.md`)
 
 > **项目名称**：成长决策顾问（Decision Advisor）  
-> **当前版本**：`v0.17`  
+> **当前版本**：`v0.18`  
 > **核心定位**：Local-First 个人成长决策顾问与双时间轴长期记忆引擎（原生 macOS SwiftUI 客户端 + 内置/远程 VPS 双模 FastAPI 后端 + 4 路中文混合检索 + 官方 ChatGPT OAuth 订阅直连 & Remote MCP）
 
 本文档面向参与本项目的 AI Coding Agent 与开发者，详细梳理**后端架构设计、核心模块职责、数据库与 API 规范**以及**目前程序的整体现状与运维工作流**。

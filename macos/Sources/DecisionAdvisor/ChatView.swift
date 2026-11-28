@@ -7,9 +7,9 @@ struct ChatView: View {
     @State private var isComposerComposing = false
     @State private var composerEditorHeight: CGFloat = 44
     @State private var showAsOfPopover = false
+    @State private var showModelEffortPopover = false
     @State private var isModeTriggerHovering = false
-    @State private var isReasoningTriggerHovering = false
-    @State private var isModelTriggerHovering = false
+    @State private var isModelEffortTriggerHovering = false
 
     private var configuredProviders: [ProviderPresetDTO] {
         (state.config?.providers ?? []).filter(\.isConfigured)
@@ -42,6 +42,7 @@ struct ChatView: View {
         let trimmed = state.chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !state.isStreaming, !trimmed.isEmpty else { return }
         showAsOfPopover = false
+        showModelEffortPopover = false
         Task { await state.sendChat() }
     }
 
@@ -176,232 +177,112 @@ struct ChatView: View {
         .help("切换对话模式：日常倾诉 / 9步决策 / 冷启动访谈 / 周期反思")
     }
 
-    private var composerReasoningMenu: some View {
-        let supported = activeProvider?.supportsReasoningEffort ?? true
-        let current = state.reasoningEffort
-        let presetDefault = activeProvider?.defaultReasoningEffort ?? .auto
-        let isCustomActive = supported && current.isExplicit && current != .none
-        let pillText: String = {
-            guard supported else { return "不支持" }
-            if current == .auto && presetDefault != .auto {
-                return "自动·\(presetDefault.pillLabel)"
-            }
-            return current.pillLabel
-        }()
-
-        return Menu {
-            Section("思考强度") {
-                ForEach(ReasoningEffort.allCases) { effort in
-                    let sub: String = {
-                        if effort == .auto && presetDefault != .auto {
-                            return "遵循当前模型预设（\(presetDefault.label)）"
-                        }
-                        return effort.subtitle
-                    }()
-                    Toggle(
-                        isOn: Binding(
-                            get: { state.reasoningEffort == effort },
-                            set: { isOn in
-                                if isOn { state.setReasoningEffort(effort) }
-                            }
-                        )
-                    ) {
-                        Text(effort.label)
-                        Text(sub)
-                        Image(systemName: effort.menuIcon)
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 4.5) {
-                Image(systemName: supported ? current.pillIcon : "brain")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(
-                        !supported
-                        ? Theme.textTertiary
-                        : (isCustomActive ? Theme.accentInk : Theme.textSecondary)
-                    )
-                Text(pillText)
-                    .font(.system(size: 11.5, weight: isCustomActive ? .semibold : .medium))
-                    .foregroundStyle(
-                        !supported
-                        ? Theme.textTertiary
-                        : (isCustomActive ? Theme.accentInk : (isReasoningTriggerHovering ? Theme.textPrimary : Theme.textSecondary))
-                    )
-                    .lineLimit(1)
-                if supported {
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8.5, weight: .semibold))
-                        .foregroundStyle(isCustomActive ? Theme.accentInk.opacity(0.68) : Theme.textTertiary)
-                }
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(
-                        !supported
-                        ? Theme.surfaceSubtle.opacity(0.55)
-                        : (isCustomActive
-                           ? Theme.selectionFill
-                           : (isReasoningTriggerHovering ? Theme.hoverFill.opacity(0.92) : Theme.surfaceSubtle.opacity(0.85)))
-                    )
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        supported && isCustomActive
-                        ? Theme.accentBorder.opacity(isReasoningTriggerHovering ? 1 : 0.55)
-                        : (supported && isReasoningTriggerHovering ? Theme.borderSubtle : .clear),
-                        lineWidth: 0.8
-                    )
-            )
-            .contentShape(Capsule())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .disabled(!supported)
-        .onHover { isReasoningTriggerHovering = $0 }
-        .help(
-            supported
-            ? "思考强度：\(current.label)（\(current.subtitle)）"
-            : "当前模型（\(activeProvider?.displayModelName ?? "")）不支持调节思考强度"
-        )
-    }
-
-    private var composerModelMenu: some View {
+    private var composerModelAndEffortPill: some View {
         Group {
-            if let cfg = state.config {
+            if state.config != nil {
                 let isReady = activeProvider?.isConfigured == true
-                let chatgptConnected = cfg.chatgptOauth?.connected == true
-                let chatgptPlan = cfg.chatgptOauth?.planType ?? ""
-                let chatgptModels = cfg.chatgptOauth?.availableModels ?? []
-                let currentChatGPTModel = cfg.providers.first(where: { $0.kind == "chatgpt_oauth" })?.model ?? ""
-                let labelText: String = {
+                let supported = activeProvider?.supportsReasoningEffort ?? true
+                let currentEffort = state.reasoningEffort
+                let presetDefault = activeProvider?.defaultReasoningEffort ?? .auto
+                let isCustomActive = isReady && supported && currentEffort.isExplicit && currentEffort != .none
+                let isHighlighted = isCustomActive || showModelEffortPopover
+
+                let modelText: String = {
                     if let p = activeProvider, p.isConfigured {
                         return p.displayModelName
                     }
                     return configuredProviders.isEmpty ? "未配置模型" : (activeProvider?.displayModelName ?? "选择模型")
                 }()
 
-                Menu {
-                    if configuredProviders.isEmpty {
-                        Section("已配置模型") {
-                            Text("暂无已配置模型（请先填写 Key 或授权）")
-                        }
-                        if !chatgptConnected {
-                            Button {
-                                state.openModelsSettings()
-                                Task {
-                                    await state.startChatGPTLogin(forceRegister: false, openBrowser: true)
-                                }
-                            } label: {
-                                Text("使用 ChatGPT 授权登录…")
-                                Image(systemName: "person.badge.key.fill")
-                            }
-                        }
-                    } else {
-                        Section("已配置模型（\(configuredProviders.count)）") {
-                            ForEach(configuredProviders) { provider in
-                                let badge: String? = {
-                                    if provider.kind == "chatgpt_oauth", !chatgptPlan.isEmpty {
-                                        return chatgptPlan.uppercased()
-                                    }
-                                    if configuredProviders.count > 1 && provider.id == cfg.activeProviderId {
-                                        return "默认"
-                                    }
-                                    return nil
-                                }()
-                                let subtitleText = [provider.name, badge]
-                                    .compactMap { $0 }
-                                    .filter { !$0.isEmpty }
-                                    .joined(separator: " · ")
-
-                                Toggle(
-                                    isOn: Binding(
-                                        get: { state.selectedProviderId == provider.id },
-                                        set: { isOn in
-                                            if isOn { state.selectedProviderId = provider.id }
-                                        }
-                                    )
-                                ) {
-                                    Text(provider.displayModelName)
-                                    Text(subtitleText)
-                                    Image(systemName: provider.kindIcon)
-                                }
-                            }
-                        }
-
-                        if chatgptConnected && chatgptModels.count > 1 {
-                            Menu {
-                                ForEach(chatgptModels) { opt in
-                                    Toggle(
-                                        isOn: Binding(
-                                            get: {
-                                                activeProvider?.kind == "chatgpt_oauth"
-                                                && currentChatGPTModel.trimmingCharacters(in: .whitespacesAndNewlines) == opt.slug
-                                            },
-                                            set: { isOn in
-                                                if isOn {
-                                                    Task { await state.switchChatGPTModel(opt.slug) }
-                                                }
-                                            }
-                                        )
-                                    ) {
-                                        Text(opt.displayName)
-                                        if opt.displayName != opt.slug {
-                                            Text(opt.slug)
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Label("切换 ChatGPT 订阅模型", systemImage: "sparkles")
-                            }
-                        }
+                let effortSuffix: String? = {
+                    guard isReady, supported else { return nil }
+                    if currentEffort == .auto && presetDefault != .auto {
+                        return "自动·\(presetDefault.pillLabel)"
                     }
+                    return currentEffort.pillLabel
+                }()
 
-                    Divider()
+                let helpText: String = {
+                    let modelPart = activeProvider.map { "\($0.name) · \($0.displayModelName)" } ?? "选择已配置的模型"
+                    guard supported else { return "\(modelPart)（不支持调节思考强度）" }
+                    return "\(modelPart) · 思考强度：\(currentEffort.label)"
+                }()
 
-                    Button {
-                        state.openModelsSettings()
-                    } label: {
-                        Text("配置模型与授权…")
-                        Image(systemName: "slider.horizontal.3")
-                    }
+                Button {
+                    showAsOfPopover = false
+                    showModelEffortPopover.toggle()
                 } label: {
-                    HStack(spacing: 5.5) {
+                    HStack(spacing: 5) {
                         Circle()
                             .fill(isReady ? Theme.success : Theme.warning)
                             .frame(width: 6, height: 6)
-                        Text(labelText)
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(isModelTriggerHovering ? Theme.textPrimary : Theme.textSecondary)
+
+                        Text(modelText)
+                            .font(.system(size: 11.5, weight: isCustomActive ? .semibold : .medium))
+                            .foregroundStyle(
+                                isHighlighted
+                                ? Theme.accentInk
+                                : (isModelEffortTriggerHovering ? Theme.textPrimary : Theme.textSecondary)
+                            )
                             .lineLimit(1)
                             .truncationMode(.middle)
+
+                        if let effortSuffix {
+                            Text("·")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(isHighlighted ? Theme.accentInk.opacity(0.45) : Theme.textTertiary)
+                                .fixedSize()
+
+                            HStack(spacing: 3) {
+                                if currentEffort == .none {
+                                    Image(systemName: "bolt.slash")
+                                        .font(.system(size: 9.5, weight: .medium))
+                                }
+                                Text(effortSuffix)
+                                    .font(.system(size: 11.5, weight: isCustomActive ? .semibold : .medium))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(
+                                isHighlighted
+                                ? Theme.accentInk
+                                : (isModelEffortTriggerHovering ? Theme.textPrimary : Theme.textSecondary)
+                            )
+                            .fixedSize(horizontal: true, vertical: false)
+                        }
+
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 8.5, weight: .semibold))
-                            .foregroundStyle(Theme.textTertiary)
+                            .foregroundStyle(isHighlighted ? Theme.accentInk.opacity(0.68) : Theme.textTertiary)
                     }
                     .padding(.horizontal, 9.5)
                     .padding(.vertical, 5)
                     .background(
                         Capsule()
-                            .fill(isModelTriggerHovering ? Theme.hoverFill.opacity(0.92) : Theme.surfaceSubtle.opacity(0.85))
+                            .fill(
+                                isHighlighted
+                                ? Theme.selectionFill
+                                : (isModelEffortTriggerHovering ? Theme.hoverFill.opacity(0.92) : Theme.surfaceSubtle.opacity(0.85))
+                            )
                     )
                     .overlay(
                         Capsule()
-                            .strokeBorder(isModelTriggerHovering ? Theme.borderSubtle : .clear, lineWidth: 0.8)
+                            .strokeBorder(
+                                isHighlighted
+                                ? Theme.accentBorder.opacity(isModelEffortTriggerHovering || showModelEffortPopover ? 1 : 0.6)
+                                : (isModelEffortTriggerHovering ? Theme.borderSubtle : .clear),
+                                lineWidth: 0.85
+                            )
                     )
                     .contentShape(Capsule())
                 }
-                .menuStyle(.button)
                 .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .frame(maxWidth: 168)
-                .onHover { isModelTriggerHovering = $0 }
-                .help(activeProvider.map { "\($0.name) · \($0.displayModelName)" } ?? "选择已配置的模型")
+                .frame(maxWidth: 232)
+                .onHover { isModelEffortTriggerHovering = $0 }
+                .help(helpText)
+                .popover(isPresented: $showModelEffortPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                    ModelAndReasoningPopover(isPresented: $showModelEffortPopover)
+                        .environment(state)
+                }
             }
         }
     }
@@ -455,6 +336,7 @@ struct ChatView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: state.currentSessionId) { _, _ in
             showAsOfPopover = false
+            showModelEffortPopover = false
         }
     }
 
@@ -493,6 +375,7 @@ struct ChatView: View {
                     text: state.useAsOfDate ? "回溯 \(formattedAsOfShort)" : "回溯",
                     isOn: state.useAsOfDate || showAsOfPopover
                 ) {
+                    showModelEffortPopover = false
                     showAsOfPopover.toggle()
                 }
                 .help("按历史日期回溯：仅检索该日期之前的记忆")
@@ -518,6 +401,7 @@ struct ChatView: View {
                         isOn: false
                     ) {
                         showAsOfPopover = false
+                        showModelEffortPopover = false
                         Task { await state.extractProposals() }
                     }
                     .disabled(state.isExtractingProposals || state.isStreaming)
@@ -526,9 +410,7 @@ struct ChatView: View {
 
                 Spacer(minLength: 6)
 
-                composerReasoningMenu
-
-                composerModelMenu
+                composerModelAndEffortPill
 
                 let canSend = !state.isStreaming && !state.chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 Button(action: submitComposer) {
@@ -1263,6 +1145,685 @@ private struct AsOfPresetPill: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+    }
+}
+
+// MARK: - Anchored Model & Reasoning Effort Popover
+
+private struct ModelAndReasoningPopover: View {
+    @Environment(AppState.self) private var state
+    @Binding var isPresented: Bool
+
+    private var configuredProviders: [ProviderPresetDTO] {
+        (state.config?.providers ?? []).filter(\.isConfigured)
+    }
+
+    private var activeProvider: ProviderPresetDTO? {
+        guard let providers = state.config?.providers else { return nil }
+        if let exact = providers.first(where: { $0.id == state.selectedProviderId }) {
+            return exact
+        }
+        return configuredProviders.first ?? providers.first
+    }
+
+    var body: some View {
+        let cfg = state.config
+        let isReady = activeProvider?.isConfigured == true
+        let chatgptConnected = cfg?.chatgptOauth?.connected == true
+        let chatgptPlan = cfg?.chatgptOauth?.planType ?? ""
+        let chatgptModels = cfg?.chatgptOauth?.availableModels ?? []
+        let currentChatGPTModel = cfg?.providers.first(where: { $0.kind == "chatgpt_oauth" })?.model ?? ""
+
+        VStack(alignment: .leading, spacing: 10) {
+            // Header
+            HStack(alignment: .center, spacing: 8) {
+                Text("模型与思考强度")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+
+                Spacer()
+
+                HStack(spacing: 4.5) {
+                    Circle()
+                        .fill(isReady ? Theme.success : Theme.warning)
+                        .frame(width: 6, height: 6)
+                    Text(isReady ? "已就绪" : "未配置")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(isReady ? Theme.accentInk : Theme.warning)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2.5)
+                .background(
+                    Capsule().fill(isReady ? Theme.selectionFill : Theme.warningSoft)
+                )
+            }
+
+            // Models list
+            if configuredProviders.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("暂无已配置模型（请先填写 Key 或授权）")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(.horizontal, 4)
+
+                    if !chatgptConnected {
+                        Button {
+                            isPresented = false
+                            state.openModelsSettings()
+                            Task {
+                                await state.startChatGPTLogin(forceRegister: false, openBrowser: true)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "person.badge.key.fill")
+                                    .font(.system(size: 11.5))
+                                Text("使用 ChatGPT 授权登录…")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(SprucePrimaryButtonStyle(compact: true))
+                    }
+                }
+                .padding(.vertical, 4)
+            } else {
+                let listContent = VStack(spacing: 2) {
+                    ForEach(configuredProviders) { provider in
+                        let isSelected = activeProvider?.id == provider.id
+                        let badge: String? = {
+                            if provider.kind == "chatgpt_oauth", !chatgptPlan.isEmpty {
+                                return chatgptPlan.uppercased()
+                            }
+                            if !provider.supportsReasoningEffort {
+                                return "无思考"
+                            }
+                            if configuredProviders.count > 1 && provider.id == cfg?.activeProviderId {
+                                return "默认"
+                            }
+                            return nil
+                        }()
+
+                        ModelPopoverRow(
+                            provider: provider,
+                            badge: badge,
+                            isSelected: isSelected
+                        ) {
+                            state.selectedProviderId = provider.id
+                        }
+                    }
+
+                    if chatgptConnected && chatgptModels.count > 1 && activeProvider?.kind == "chatgpt_oauth" {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("ChatGPT 订阅模型")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(Theme.textTertiary)
+
+                            FlowLayout(spacing: 5, lineSpacing: 5) {
+                                ForEach(chatgptModels) { opt in
+                                    let isCurrent = currentChatGPTModel.trimmingCharacters(in: .whitespacesAndNewlines) == opt.slug
+                                    ChatGPTSubModelPill(
+                                        title: opt.displayName,
+                                        isSelected: isCurrent
+                                    ) {
+                                        Task { await state.switchChatGPTModel(opt.slug) }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.top, 5)
+                        .padding(.bottom, 2)
+                    }
+                }
+
+                if configuredProviders.count > 6 {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        listContent
+                    }
+                    .frame(maxHeight: 224)
+                } else {
+                    listContent
+                }
+            }
+
+            // Stardust Reasoning Effort Slider Card
+            StardustReasoningSliderCard(
+                activeProvider: activeProvider,
+                effort: state.reasoningEffort
+            ) { newEffort in
+                state.setReasoningEffort(newEffort)
+            }
+
+            Divider().opacity(0.6)
+
+            // Footer
+            HStack(spacing: 8) {
+                Button {
+                    isPresented = false
+                    state.openModelsSettings()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 11, weight: .medium))
+                        Text("配置模型与授权…")
+                            .font(.system(size: 11.5, weight: .medium))
+                    }
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 3)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    isPresented = false
+                } label: {
+                    Text("完成")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(Theme.accentInk)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Theme.selectionFill))
+                        .overlay(Capsule().strokeBorder(Theme.accentBorder.opacity(0.6), lineWidth: 0.7))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(13)
+        .frame(width: 326)
+    }
+}
+
+private struct ModelPopoverRow: View {
+    let provider: ProviderPresetDTO
+    let badge: String?
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(isSelected ? Theme.success : Theme.textTertiary.opacity(0.45))
+                    .frame(width: 6, height: 6)
+
+                VStack(alignment: .leading, spacing: 1.5) {
+                    HStack(spacing: 5) {
+                        Text(provider.displayModelName)
+                            .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                            .foregroundStyle(isSelected ? Theme.accentInk : Theme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        if let badge, !badge.isEmpty {
+                            Text(badge)
+                                .font(.system(size: 9.5, weight: .medium))
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.horizontal, 5.5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Theme.surfaceSubtle))
+                                .fixedSize()
+                        }
+                    }
+
+                    Text(provider.name)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.accentInk)
+                }
+            }
+            .padding(.horizontal, 8.5)
+            .padding(.vertical, 5.5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Theme.selectionFill : (isHovering ? Theme.hoverFill.opacity(0.75) : .clear))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+private struct ChatGPTSubModelPill: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Theme.accentInk : (isHovering ? Theme.textPrimary : Theme.textSecondary))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3.5)
+                .background(
+                    Capsule().fill(isSelected ? Theme.selectionFill : (isHovering ? Theme.hoverFill : Theme.surfaceSubtle))
+                )
+                .overlay(
+                    Capsule().strokeBorder(isSelected ? Theme.accentBorder.opacity(0.65) : .clear, lineWidth: 0.7)
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+private struct StardustSeed: Sendable {
+    let x: CGFloat
+    let y: CGFloat
+    let radius: CGFloat
+    let speed: Double
+    let phase: Double
+    let dx: CGFloat
+    let dy: CGFloat
+}
+
+private struct StardustReasoningSliderCard: View {
+    let activeProvider: ProviderPresetDTO?
+    let effort: ReasoningEffort
+    let onSelect: (ReasoningEffort) -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var dragFraction: CGFloat? = nil
+    @State private var lastHapticStopIndex: Int? = nil
+    @State private var isAutoHovering = false
+
+    private static let sliderStops: [ReasoningEffort] = [.none, .low, .medium, .high, .xhigh]
+
+    private static let stardustSeeds: [StardustSeed] = [
+        StardustSeed(x: 0.06, y: 0.28, radius: 1.7, speed: 2.3, phase: 0.0, dx: 2.0, dy: -1.4),
+        StardustSeed(x: 0.10, y: 0.66, radius: 1.2, speed: 1.9, phase: 1.1, dx: -1.2, dy: 1.6),
+        StardustSeed(x: 0.15, y: 0.44, radius: 1.4, speed: 2.1, phase: 2.3, dx: 1.5, dy: -1.6),
+        StardustSeed(x: 0.20, y: 0.74, radius: 1.1, speed: 1.7, phase: 0.7, dx: 1.8, dy: 1.1),
+        StardustSeed(x: 0.25, y: 0.30, radius: 1.3, speed: 2.4, phase: 3.0, dx: -1.4, dy: 1.3),
+        StardustSeed(x: 0.30, y: 0.64, radius: 1.8, speed: 2.0, phase: 1.7, dx: 2.1, dy: -1.7),
+        StardustSeed(x: 0.35, y: 0.48, radius: 1.1, speed: 2.5, phase: 3.8, dx: -1.1, dy: -1.3),
+        StardustSeed(x: 0.39, y: 0.56, radius: 1.5, speed: 1.8, phase: 0.4, dx: 1.4, dy: 1.8),
+        StardustSeed(x: 0.44, y: 0.24, radius: 1.6, speed: 2.2, phase: 2.6, dx: -1.8, dy: 1.4),
+        StardustSeed(x: 0.48, y: 0.70, radius: 1.3, speed: 2.0, phase: 1.3, dx: 1.6, dy: -1.8),
+        StardustSeed(x: 0.53, y: 0.40, radius: 1.1, speed: 2.6, phase: 4.2, dx: 1.9, dy: 1.0),
+        StardustSeed(x: 0.58, y: 0.58, radius: 1.4, speed: 1.9, phase: 0.9, dx: -1.4, dy: -1.5),
+        StardustSeed(x: 0.63, y: 0.28, radius: 1.7, speed: 2.1, phase: 3.2, dx: 1.5, dy: 1.8),
+        StardustSeed(x: 0.66, y: 0.64, radius: 1.2, speed: 2.0, phase: 2.0, dx: -1.9, dy: -1.1),
+        StardustSeed(x: 0.70, y: 0.46, radius: 1.5, speed: 2.3, phase: 0.2, dx: 1.9, dy: -1.4),
+        StardustSeed(x: 0.75, y: 0.34, radius: 1.1, speed: 1.7, phase: 2.8, dx: -1.1, dy: 1.4),
+        StardustSeed(x: 0.79, y: 0.68, radius: 1.3, speed: 2.5, phase: 1.5, dx: 1.5, dy: -1.7),
+        StardustSeed(x: 0.84, y: 0.44, radius: 1.5, speed: 2.1, phase: 3.5, dx: -1.4, dy: 1.1),
+        StardustSeed(x: 0.89, y: 0.58, radius: 1.3, speed: 2.2, phase: 0.6, dx: 1.1, dy: -1.4),
+    ]
+
+    private var supported: Bool {
+        activeProvider?.supportsReasoningEffort ?? true
+    }
+
+    private var presetDefault: ReasoningEffort {
+        activeProvider?.defaultReasoningEffort ?? .auto
+    }
+
+    private var isDragging: Bool {
+        dragFraction != nil
+    }
+
+    private func shortTickLabel(for level: ReasoningEffort) -> String {
+        switch level {
+        case .auto: return "自动"
+        case .none: return "关闭"
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        case .xhigh: return "极高"
+        }
+    }
+
+    private var effectiveFraction: CGFloat {
+        if let dragFraction { return dragFraction }
+        guard supported else { return 0 }
+        if effort == .auto {
+            let presetIdx = Self.sliderStops.firstIndex(of: presetDefault) ?? 2
+            return CGFloat(presetIdx) / 4.0
+        }
+        let idx = Self.sliderStops.firstIndex(of: effort) ?? 2
+        return CGFloat(idx) / 4.0
+    }
+
+    private var activePreviewEffort: ReasoningEffort {
+        if let dragFraction {
+            let idx = min(4, max(0, Int((dragFraction * 4.0).rounded())))
+            return Self.sliderStops[idx]
+        }
+        return effort
+    }
+
+    private var isVisuallyOff: Bool {
+        if !supported { return true }
+        if let dragFraction { return dragFraction < 0.08 }
+        return effort == .none
+    }
+
+    private var isVisuallyAuto: Bool {
+        supported && dragFraction == nil && effort == .auto
+    }
+
+    private var particleOpacity: Double {
+        if !supported || isVisuallyOff { return 0 }
+        if isVisuallyAuto { return 0.45 }
+        if let dragFraction {
+            return 0.35 + Double(dragFraction) * 0.65
+        }
+        switch effort {
+        case .none: return 0
+        case .low: return 0.52
+        case .medium: return 0.72
+        case .high: return 0.88
+        case .xhigh: return 1.0
+        case .auto: return 0.45
+        }
+    }
+
+    private var valueLabelText: String {
+        guard supported else { return "不支持" }
+        let current = activePreviewEffort
+        if current == .auto && presetDefault != .auto {
+            return "自动·\(presetDefault.pillLabel)"
+        }
+        return current.label
+    }
+
+    private var descriptionText: String {
+        guard supported else {
+            return "当前模型（\(activeProvider?.displayModelName ?? "")）不支持调节思考强度"
+        }
+        let current = activePreviewEffort
+        if current == .auto {
+            if presetDefault != .auto {
+                return "遵循当前模型预设（\(presetDefault.label)），拖动滑块可手动接管"
+            }
+            return "由模型默认策略自动决定，拖动滑块可随时手动指定"
+        }
+        return current.subtitle
+    }
+
+    // Emerald Stardust Palette (aligned with Theme.swift White Glass)
+    private var isDark: Bool { colorScheme == .dark }
+
+    private var cardBackground: LinearGradient {
+        if isDark {
+            return LinearGradient(
+                colors: [
+                    Color(red: 0.098, green: 0.200, blue: 0.161).opacity(0.75),
+                    Color(red: 0.078, green: 0.149, blue: 0.125).opacity(0.88),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        return LinearGradient(
+            colors: [
+                Color(red: 0.910, green: 0.973, blue: 0.941).opacity(0.80),
+                Color(red: 0.965, green: 0.988, blue: 0.976).opacity(0.95),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var cardBorderColor: Color {
+        isDark
+            ? Color(red: 0.420, green: 0.800, blue: 0.671).opacity(0.36)
+            : Color(red: 0.306, green: 0.729, blue: 0.525).opacity(0.45)
+    }
+
+    private var accentValueColor: Color {
+        isDark
+            ? Color(red: 0.553, green: 0.902, blue: 0.769)
+            : Color(red: 0.122, green: 0.478, blue: 0.318)
+    }
+
+    private var trackBackgroundColor: Color {
+        isDark
+            ? Color.white.opacity(0.085)
+            : Color(red: 0.078, green: 0.243, blue: 0.173).opacity(0.085)
+    }
+
+    private var fillGradient: LinearGradient {
+        if isDark {
+            return LinearGradient(
+                stops: [
+                    .init(color: Color(red: 0.051, green: 0.184, blue: 0.137), location: 0.0),
+                    .init(color: Color(red: 0.106, green: 0.396, blue: 0.286), location: 0.34),
+                    .init(color: Color(red: 0.227, green: 0.690, blue: 0.510), location: 0.68),
+                    .init(color: Color(red: 0.596, green: 0.922, blue: 0.816), location: 1.0),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
+        return LinearGradient(
+            stops: [
+                .init(color: Color(red: 0.059, green: 0.239, blue: 0.173), location: 0.0),
+                .init(color: Color(red: 0.114, green: 0.435, blue: 0.302), location: 0.34),
+                .init(color: Color(red: 0.227, green: 0.663, blue: 0.467), location: 0.68),
+                .init(color: Color(red: 0.608, green: 0.898, blue: 0.769), location: 1.0),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
+    private var fillGlowColor: Color {
+        isDark
+            ? Color(red: 0.420, green: 0.800, blue: 0.671).opacity(0.24)
+            : Color(red: 0.227, green: 0.663, blue: 0.467).opacity(0.28)
+    }
+
+    var body: some View {
+        let trackHeight: CGFloat = 30
+        let thumbSize: CGFloat = 26
+
+        VStack(alignment: .leading, spacing: 7) {
+            // Card Header
+            HStack(alignment: .center, spacing: 6) {
+                Text("思考强度")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                        dragFraction = nil
+                        onSelect(.auto)
+                    }
+                } label: {
+                    let autoActive = supported && !isDragging && effort == .auto
+                    Text("自动")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(autoActive || isAutoHovering ? accentValueColor : Theme.textTertiary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule().fill(
+                                autoActive || isAutoHovering
+                                ? accentValueColor.opacity(isDark ? 0.18 : 0.12)
+                                : .clear
+                            )
+                        )
+                        .overlay(
+                            Capsule().strokeBorder(
+                                autoActive ? accentValueColor.opacity(0.32) : .clear,
+                                lineWidth: 0.8
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!supported)
+                .onHover { isAutoHovering = $0 }
+                .help("恢复由模型自动决定思考强度")
+
+                Spacer()
+
+                Text(valueLabelText)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isVisuallyOff ? Theme.textTertiary : accentValueColor)
+                    .animation(.easeOut(duration: 0.12), value: valueLabelText)
+            }
+
+            // Draggable Glowing Particle Pill Track
+            GeometryReader { geo in
+                let totalWidth = max(trackHeight, geo.size.width)
+                let usableWidth = max(1, totalWidth - trackHeight)
+                let frac = effectiveFraction
+                let fillWidth = trackHeight + usableWidth * frac
+                let thumbOffsetX = (trackHeight - thumbSize) * 0.5 + usableWidth * frac
+
+                ZStack(alignment: .leading) {
+                    // Recessed track background
+                    Capsule()
+                        .fill(trackBackgroundColor)
+                        .overlay(
+                            Capsule().strokeBorder(Color.black.opacity(isDark ? 0.22 : 0.05), lineWidth: 0.6)
+                        )
+
+                    // Active gradient fill + animated stardust particles
+                    ZStack(alignment: .leading) {
+                        if isVisuallyOff {
+                            Capsule()
+                                .fill(Theme.borderStrong)
+                        } else {
+                            Capsule()
+                                .fill(fillGradient)
+                        }
+
+                        if particleOpacity > 0.01 {
+                            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !supported || particleOpacity <= 0.01)) { timeline in
+                                Canvas { context, size in
+                                    let t = timeline.date.timeIntervalSinceReferenceDate
+                                    for seed in Self.stardustSeeds {
+                                        let wave = sin(t * seed.speed + seed.phase)
+                                        let norm = (wave + 1.0) * 0.5
+                                        let cx = seed.x * size.width + CGFloat(wave) * seed.dx
+                                        let cy = seed.y * size.height + CGFloat(cos(t * seed.speed * 0.85 + seed.phase)) * seed.dy
+                                        let alpha = (0.38 + 0.62 * norm) * particleOpacity
+                                        let r = seed.radius * (0.85 + 0.25 * CGFloat(norm))
+
+                                        let haloR = r * 2.15
+                                        let haloRect = CGRect(x: cx - haloR, y: cy - haloR, width: haloR * 2, height: haloR * 2)
+                                        context.fill(Path(ellipseIn: haloRect), with: .color(Color.white.opacity(alpha * 0.34)))
+
+                                        let coreRect = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
+                                        context.fill(Path(ellipseIn: coreRect), with: .color(Color.white.opacity(alpha)))
+                                    }
+                                }
+                            }
+                            .frame(width: totalWidth, height: trackHeight)
+                            .allowsHitTesting(false)
+                        }
+                    }
+                    .frame(width: fillWidth, height: trackHeight, alignment: .leading)
+                    .clipShape(Capsule())
+                    .opacity(isVisuallyAuto ? 0.62 : 1.0)
+                    .shadow(color: isVisuallyOff ? .clear : fillGlowColor, radius: 6, y: 2)
+
+                    // White circular thumb
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: thumbSize, height: thumbSize)
+                        .shadow(color: Color.black.opacity(isDragging ? 0.28 : 0.20), radius: isDragging ? 5 : 3.5, y: 1.5)
+                        .overlay(
+                            Circle().strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5)
+                        )
+                        .scaleEffect(isDragging ? 1.07 : 1.0)
+                        .offset(x: thumbOffsetX)
+                        .animation(.easeOut(duration: 0.12), value: isDragging)
+                }
+                .frame(height: trackHeight)
+                .contentShape(Capsule())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard supported else { return }
+                            let raw = (value.location.x - trackHeight * 0.5) / usableWidth
+                            let clamped = min(1, max(0, raw))
+                            dragFraction = clamped
+                            let stopIdx = min(4, max(0, Int((clamped * 4.0).rounded())))
+                            if lastHapticStopIndex != stopIdx {
+                                lastHapticStopIndex = stopIdx
+                                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                            }
+                        }
+                        .onEnded { value in
+                            guard supported else { return }
+                            let raw = (value.location.x - trackHeight * 0.5) / usableWidth
+                            let clamped = min(1, max(0, raw))
+                            let stopIdx = min(4, max(0, Int((clamped * 4.0).rounded())))
+                            let target = Self.sliderStops[stopIdx]
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                                dragFraction = nil
+                                onSelect(target)
+                            }
+                            lastHapticStopIndex = nil
+                        }
+                )
+            }
+            .frame(height: trackHeight)
+
+            // 5-stop clickable tick labels
+            HStack {
+                ForEach(Array(Self.sliderStops.enumerated()), id: \.element.id) { idx, stop in
+                    let isSelectedTick = supported && activePreviewEffort == stop
+                    Button {
+                        withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                            dragFraction = nil
+                            onSelect(stop)
+                        }
+                    } label: {
+                        Text(shortTickLabel(for: stop))
+                            .font(.system(size: 10, weight: isSelectedTick ? .bold : .medium))
+                            .foregroundStyle(isSelectedTick ? accentValueColor : Theme.textTertiary)
+                            .padding(.horizontal, 2)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!supported)
+
+                    if idx < Self.sliderStops.count - 1 {
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+
+            // Live description
+            Text(descriptionText)
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.textTertiary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 11)
+        .padding(.top, 10)
+        .padding(.bottom, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(cardBorderColor, lineWidth: 1.1)
+        )
+        .opacity(supported ? 1.0 : 0.54)
     }
 }
 
