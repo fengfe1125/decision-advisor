@@ -247,6 +247,19 @@ final class AppState {
         }
     }
 
+    private func syncSelectedProviderIfNeeded(using cfg: PublicConfigDTO) {
+        if let current = cfg.providers.first(where: { $0.id == self.selectedProviderId }), current.isConfigured {
+            return
+        }
+        if let active = cfg.providers.first(where: { $0.id == cfg.activeProviderId && $0.isConfigured }) {
+            self.selectedProviderId = active.id
+        } else if let firstConfigured = cfg.providers.first(where: \.isConfigured) {
+            self.selectedProviderId = firstConfigured.id
+        } else if self.selectedProviderId.isEmpty || !cfg.providers.contains(where: { $0.id == self.selectedProviderId }) {
+            self.selectedProviderId = cfg.activeProviderId
+        }
+    }
+
     func refreshHealthAndConfig() async {
         do {
             async let h = api.fetchHealth()
@@ -255,9 +268,7 @@ final class AppState {
             self.health = healthRes
             self.config = cfgRes
             self.isOnline = true
-            if self.selectedProviderId.isEmpty {
-                self.selectedProviderId = cfgRes.activeProviderId
-            }
+            syncSelectedProviderIfNeeded(using: cfgRes)
         } catch {
             self.isOnline = false
             self.showBanner(error.localizedDescription)
@@ -739,6 +750,7 @@ final class AppState {
             }
             self.config = updated
             self.selectedProviderId = updated.activeProviderId
+            syncSelectedProviderIfNeeded(using: updated)
             showBanner("✅ 设置已保存")
         } catch {
             showBanner("保存设置失败：\(error.localizedDescription)")
@@ -923,6 +935,7 @@ final class AppState {
         do {
             let res = try await api.logoutChatGPTOAuth(resetClient: resetClient)
             self.config = res.config
+            syncSelectedProviderIfNeeded(using: res.config)
             self.chatgptAuthURL = ""
             showBanner(resetClient ? "已退出 ChatGPT 并重置客户端注册" : "已退出 ChatGPT 授权登录")
         } catch {

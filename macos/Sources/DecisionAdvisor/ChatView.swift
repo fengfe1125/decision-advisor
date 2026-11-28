@@ -1,14 +1,38 @@
 import AppKit
 import SwiftUI
 
+private enum ComposerPopover: Equatable {
+    case mode
+    case context
+    case model
+
+    var anchor: UnitPoint {
+        switch self {
+        case .model: return .bottomTrailing
+        case .mode, .context: return .bottomLeading
+        }
+    }
+}
+
 struct ChatView: View {
     @Environment(AppState.self) private var state
-    @FocusState private var isComposerFocused: Bool
-    @State private var showOptionsPopover = false
+    @State private var isComposerFocused = false
+    @State private var isComposerComposing = false
+    @State private var composerEditorHeight: CGFloat = 44
+    @State private var activePopover: ComposerPopover? = nil
+    @State private var isModeTriggerHovering = false
+    @State private var isModelTriggerHovering = false
+
+    private var configuredProviders: [ProviderPresetDTO] {
+        (state.config?.providers ?? []).filter(\.isConfigured)
+    }
 
     private var activeProvider: ProviderPresetDTO? {
         guard let providers = state.config?.providers else { return nil }
-        return providers.first(where: { $0.id == state.selectedProviderId }) ?? providers.first
+        if let exact = providers.first(where: { $0.id == state.selectedProviderId }) {
+            return exact
+        }
+        return configuredProviders.first ?? providers.first
     }
 
     private var formattedAsOfShort: String {
@@ -26,14 +50,28 @@ struct ChatView: View {
         return state.messages.isEmpty ? "新对话" : "当前对话"
     }
 
-    private var composerEditorHeight: CGFloat {
-        let text = state.chatInput
-        if text.isEmpty { return 48 }
-        let paragraphs = text.components(separatedBy: "\n")
-        let estimatedLines = paragraphs.reduce(0) { acc, line in
-            acc + max(1, Int(ceil(Double(max(1, line.count)) / 42.0)))
+    private func togglePopover(_ target: ComposerPopover) {
+        let next: ComposerPopover? = (activePopover == target) ? nil : target
+        if next != nil {
+            NSApp.keyWindow?.makeFirstResponder(nil)
         }
-        return min(144, max(48, CGFloat(estimatedLines) * 22 + 16))
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.86)) {
+            activePopover = next
+        }
+    }
+
+    private func dismissPopover() {
+        guard activePopover != nil else { return }
+        withAnimation(.spring(response: 0.20, dampingFraction: 0.90)) {
+            activePopover = nil
+        }
+    }
+
+    private func submitComposer() {
+        let trimmed = state.chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !state.isStreaming, !trimmed.isEmpty else { return }
+        dismissPopover()
+        Task { await state.sendChat() }
     }
 
     var body: some View {
@@ -107,101 +145,91 @@ struct ChatView: View {
         .frame(height: Theme.headerHeight)
     }
 
-    private var composerModeMenu: some View {
-        Menu {
-            ForEach(ChatMode.allCases) { mode in
-                Button {
-                    state.chatMode = mode
-                } label: {
-                    HStack {
-                        Label(mode.label, systemImage: mode.icon)
-                        if mode == state.chatMode {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button {
-                Task { await state.startGuidedInterview(focusSlot: nil) }
-            } label: {
-                Label("让顾问主动发起冷启动访谈…", systemImage: "mic.badge.plus")
-            }
+    private var composerModeTrigger: some View {
+        let isOpen = activePopover == .mode
+        return Button {
+            togglePopover(.mode)
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: state.chatMode.icon)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(isOpen ? Theme.accentInk : Theme.accent)
                 Text(state.chatMode.label)
                     .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
+                    .foregroundStyle(isOpen ? Theme.accentInk : Theme.textPrimary)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8.5, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
+                    .foregroundStyle(isOpen ? Theme.accentInk.opacity(0.75) : Theme.textTertiary)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(Theme.selectionFill, in: Capsule())
+            .background(
+                Capsule()
+                    .fill(isOpen ? Theme.selectionFill : (isModeTriggerHovering ? Theme.selectionFill.opacity(0.95) : Theme.selectionFill))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(isOpen ? Theme.accentBorder : (isModeTriggerHovering ? Theme.accentBorder.opacity(0.5) : .clear), lineWidth: 0.85)
+            )
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .menuIndicator(.hidden)
+        .onHover { isModeTriggerHovering = $0 }
         .help("切换对话模式：日常倾诉 / 9步决策 / 冷启动访谈 / 周期反思")
     }
 
-    private var composerModelMenu: some View {
+    private var composerModelTrigger: some View {
         Group {
-            if let providers = state.config?.providers, !providers.isEmpty {
-                Menu {
-                    ForEach(providers) { p in
-                        Button {
-                            state.selectedProviderId = p.id
-                        } label: {
-                            HStack {
-                                let missingTag = p.kind == "chatgpt_oauth" ? " (未授权)" : " (未填Key)"
-                                Text("\(p.name) · \(p.model)\(p.hasApiKey == true ? "" : missingTag)")
-                                if p.id == state.selectedProviderId {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
+            if state.config != nil {
+                let isOpen = activePopover == .model
+                let isReady = activeProvider?.isConfigured == true
+                let labelText: String = {
+                    if let p = activeProvider, p.isConfigured {
+                        return p.displayModelName
                     }
-                    Divider()
-                    if state.config?.chatgptOauth?.connected != true {
-                        Button("使用 ChatGPT 账号授权登录…") {
-                            state.openModelsSettings()
-                            Task {
-                                await state.startChatGPTLogin(forceRegister: false, openBrowser: true)
-                            }
-                        }
-                    }
-                    Button("配置模型与授权…") {
-                        state.openModelsSettings()
-                    }
+                    return configuredProviders.isEmpty ? "未配置模型" : (activeProvider?.displayModelName ?? "选择模型")
+                }()
+
+                Button {
+                    togglePopover(.model)
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 5.5) {
                         Circle()
-                            .fill(activeProvider?.hasApiKey == true ? Theme.success : Theme.warning)
+                            .fill(isReady ? Theme.success : Theme.warning)
                             .frame(width: 6, height: 6)
-                        Text(activeProvider.map { $0.model.isEmpty ? $0.name : $0.model } ?? "选择模型")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(Theme.textSecondary)
+                        Text(labelText)
+                            .font(.system(size: 11.5, weight: isOpen ? .semibold : .medium))
+                            .foregroundStyle(isOpen ? Theme.accentInk : (isModelTriggerHovering ? Theme.textPrimary : Theme.textSecondary))
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 8.5, weight: .semibold))
-                            .foregroundStyle(Theme.textTertiary)
+                            .foregroundStyle(isOpen ? Theme.accentInk.opacity(0.75) : Theme.textTertiary)
                     }
-                    .padding(.horizontal, 9)
+                    .padding(.horizontal, 9.5)
                     .padding(.vertical, 5)
-                    .background(Theme.surfaceSubtle.opacity(0.85), in: Capsule())
+                    .background(
+                        Capsule()
+                            .fill(
+                                isOpen
+                                ? Theme.selectionFill
+                                : (isModelTriggerHovering ? Theme.hoverFill.opacity(0.92) : Theme.surfaceSubtle.opacity(0.85))
+                            )
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                isOpen ? Theme.accentBorder : (isModelTriggerHovering ? Theme.borderSubtle : .clear),
+                                lineWidth: 0.8
+                            )
+                    )
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .frame(maxWidth: 165)
-                .help(activeProvider.map { "\($0.name) · \($0.model)" } ?? "选择模型")
+                .onHover { isModelTriggerHovering = $0 }
+                .frame(maxWidth: 190)
+                .help(activeProvider.map { "\($0.name) · \($0.displayModelName)" } ?? "选择已配置的模型")
             }
         }
     }
@@ -210,21 +238,14 @@ struct ChatView: View {
 
     @ViewBuilder
     private func chatColumn(canShowInspector: Bool) -> some View {
-        @Bindable var state = state
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                toolbar(canShowInspector: canShowInspector)
 
-        VStack(spacing: 0) {
-            toolbar(canShowInspector: canShowInspector)
-
-            if state.messages.isEmpty {
-                VStack(spacing: 0) {
-                    Spacer()
-                    composer
-                    Spacer()
-                    Spacer().frame(maxHeight: 36)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ZStack(alignment: .bottom) {
+                if state.messages.isEmpty {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 24) {
@@ -238,7 +259,7 @@ struct ChatView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.horizontal, 28)
                             .padding(.top, 14)
-                            .padding(.bottom, 150)
+                            .padding(.bottom, 160)
                         }
                         .scrollIndicators(.automatic)
                         .onChange(of: state.messages.count) { _, _ in
@@ -250,11 +271,116 @@ struct ChatView: View {
                             proxy.scrollTo("chat-bottom-anchor", anchor: .bottom)
                         }
                     }
-
-                    composer
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if activePopover != nil {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        dismissPopover()
+                    }
+                    .zIndex(10)
+
+                Button("") {
+                    dismissPopover()
+                }
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            }
+
+            VStack(spacing: 8) {
+                if let popover = activePopover {
+                    floatingPopoverRow(for: popover)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity
+                                    .combined(with: .scale(scale: 0.96, anchor: popover.anchor))
+                                    .combined(with: .offset(y: 6)),
+                                removal: .opacity
+                                    .combined(with: .scale(scale: 0.97, anchor: popover.anchor))
+                            )
+                        )
+                }
+
+                composer
+            }
+            .frame(maxWidth: 760)
+            .padding(.horizontal, 28)
+            .padding(.bottom, 18)
+            .zIndex(20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: isComposerFocused) { _, focused in
+            if focused && activePopover != nil {
+                dismissPopover()
+            }
+        }
+        .onChange(of: state.currentSessionId) { _, _ in
+            if activePopover != nil {
+                dismissPopover()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func floatingPopoverRow(for popover: ComposerPopover) -> some View {
+        switch popover {
+        case .model:
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                ComposerModelPopover(
+                    providers: configuredProviders,
+                    selectedProviderId: state.selectedProviderId,
+                    defaultProviderId: state.config?.activeProviderId ?? "",
+                    chatgptPlanType: state.config?.chatgptOauth?.planType ?? "",
+                    chatgptConnected: state.config?.chatgptOauth?.connected == true,
+                    onSelect: { provider in
+                        state.selectedProviderId = provider.id
+                        dismissPopover()
+                    },
+                    onOpenSettings: {
+                        dismissPopover()
+                        state.openModelsSettings()
+                    },
+                    onStartChatGPTLogin: {
+                        dismissPopover()
+                        state.openModelsSettings()
+                        Task {
+                            await state.startChatGPTLogin(forceRegister: false, openBrowser: true)
+                        }
+                    }
+                )
+            }
+            .padding(.trailing, 4)
+
+        case .mode:
+            HStack(spacing: 0) {
+                ComposerModePopover(
+                    selectedMode: state.chatMode,
+                    onSelect: { mode in
+                        state.chatMode = mode
+                        dismissPopover()
+                    },
+                    onStartInterview: {
+                        dismissPopover()
+                        Task { await state.startGuidedInterview(focusSlot: nil) }
+                    }
+                )
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 4)
+
+        case .context:
+            HStack(spacing: 0) {
+                ChatContextOptionsPopover()
+                    .environment(state)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 4)
         }
     }
 
@@ -265,43 +391,37 @@ struct ChatView: View {
 
         return VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
-                if state.chatInput.isEmpty {
+                if state.chatInput.isEmpty && !isComposerComposing {
                     Text(state.chatMode.placeholder)
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.textTertiary)
                         .padding(.horizontal, 16)
-                        .padding(.top, 13)
+                        .padding(.top, 11)
                         .allowsHitTesting(false)
                 }
 
-                TextEditor(text: $state.chatInput)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineSpacing(4)
-                    .scrollContentBackground(.hidden)
-                    .focused($isComposerFocused)
-                    .frame(height: composerEditorHeight)
-                    .padding(.horizontal, 11)
-                    .padding(.top, 9)
-                    .padding(.bottom, 2)
-                    .animation(.easeOut(duration: 0.12), value: composerEditorHeight)
+                ComposerTextEditor(
+                    text: $state.chatInput,
+                    isFocused: $isComposerFocused,
+                    isComposing: $isComposerComposing,
+                    height: $composerEditorHeight,
+                    onSubmit: submitComposer
+                )
+                .frame(height: composerEditorHeight)
+                .animation(.easeOut(duration: 0.10), value: composerEditorHeight)
             }
 
             HStack(spacing: 5) {
-                composerModeMenu
+                composerModeTrigger
 
                 ComposerChip(
                     icon: state.useAsOfDate ? "calendar.badge.clock" : "calendar",
                     text: state.useAsOfDate ? "回溯 \(formattedAsOfShort)" : "回溯",
-                    isOn: state.useAsOfDate
+                    isOn: state.useAsOfDate || activePopover == .context
                 ) {
-                    showOptionsPopover.toggle()
+                    togglePopover(.context)
                 }
                 .help("按历史日期回溯：仅检索该日期之前的记忆")
-                .popover(isPresented: $showOptionsPopover, arrowEdge: .bottom) {
-                    ChatContextOptionsPopover()
-                        .environment(state)
-                }
 
                 ComposerChip(
                     icon: state.allowSensitive ? "lock.open" : "lock.shield",
@@ -319,6 +439,7 @@ struct ChatView: View {
                         text: state.isExtractingProposals ? "提炼中…" : "提炼记忆",
                         isOn: false
                     ) {
+                        dismissPopover()
                         Task { await state.extractProposals() }
                     }
                     .disabled(state.isExtractingProposals || state.isStreaming)
@@ -327,12 +448,10 @@ struct ChatView: View {
 
                 Spacer(minLength: 6)
 
-                composerModelMenu
+                composerModelTrigger
 
                 let canSend = !state.isStreaming && !state.chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                Button {
-                    Task { await state.sendChat() }
-                } label: {
+                Button(action: submitComposer) {
                     ZStack {
                         Circle()
                             .fill(canSend ? AnyShapeStyle(Theme.accentGradient) : AnyShapeStyle(Theme.surfaceSubtle))
@@ -349,9 +468,8 @@ struct ChatView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canSend)
-                .help("发送消息 (⌘↩)")
+                .help("发送消息（↩ 发送 · ⇧↩ 换行）")
             }
             .padding(.horizontal, 9)
             .padding(.top, 2)
@@ -362,9 +480,6 @@ struct ChatView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(Theme.accentBorder.opacity(isComposerFocused ? 1 : 0), lineWidth: 1.2)
         )
-        .frame(maxWidth: 760)
-        .padding(.horizontal, 28)
-        .padding(.bottom, state.messages.isEmpty ? 0 : 16)
     }
 }
 
@@ -648,6 +763,625 @@ private struct InspectorReferenceRow: View {
     }
 }
 
+// MARK: - Native Composer TextEditor (Return = Send · Shift+Return = Newline · IME Safe)
+
+private final class ComposerScrollView: NSScrollView {
+    override func layout() {
+        super.layout()
+        guard let textView = documentView as? SubmitAwareTextView else { return }
+        let targetWidth = contentSize.width
+        let targetMinHeight = max(44, contentSize.height)
+        if textView.minSize.height != targetMinHeight {
+            textView.minSize = NSSize(width: 0, height: targetMinHeight)
+        }
+        if targetWidth > 1 && abs(textView.frame.size.width - targetWidth) > 0.5 {
+            textView.frame = NSRect(
+                x: 0,
+                y: 0,
+                width: targetWidth,
+                height: max(textView.frame.size.height, targetMinHeight)
+            )
+            textView.textContainer?.containerSize = NSSize(
+                width: max(1, targetWidth - textView.textContainerInset.width * 2),
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            textView.recalculateHeight()
+        } else if textView.frame.size.height < targetMinHeight {
+            textView.frame.size.height = targetMinHeight
+        }
+    }
+}
+
+private final class SubmitAwareTextView: NSTextView {
+    var onSubmit: (() -> Void)?
+    var onFocusChange: ((Bool) -> Void)?
+    var onHeightChange: ((CGFloat) -> Void)?
+    var onCompositionChange: ((Bool) -> Void)?
+
+    private let minEditorHeight: CGFloat = 44
+    private let maxEditorHeight: CGFloat = 152
+    private var currentKeyFlags: NSEvent.ModifierFlags = []
+
+    override func keyDown(with event: NSEvent) {
+        currentKeyFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        defer { currentKeyFlags = [] }
+        super.keyDown(with: event)
+    }
+
+    func applyTypingStyle() {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 4
+        defaultParagraphStyle = paragraph
+        let font = NSFont.systemFont(ofSize: 14)
+        let color = Theme.textPrimaryNS
+        self.font = font
+        self.textColor = color
+        self.insertionPointColor = Theme.accentInkNS
+        self.typingAttributes = [
+            .font: font,
+            .foregroundColor: color,
+            .paragraphStyle: paragraph,
+        ]
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyTypingStyle()
+        if let storage = textStorage, storage.length > 0 {
+            storage.addAttribute(.foregroundColor, value: Theme.textPrimaryNS, range: NSRange(location: 0, length: storage.length))
+        }
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            onFocusChange?(true)
+        }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned {
+            onFocusChange?(false)
+        }
+        return resigned
+    }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        onCompositionChange?(hasMarkedText())
+        recalculateHeight()
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onCompositionChange?(hasMarkedText())
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isReturnKey = event.keyCode == 36 || event.keyCode == 76
+        if isReturnKey && flags.contains(.command) && window?.firstResponder === self {
+            if !hasMarkedText() {
+                onSubmit?()
+                return true
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func doCommand(by selector: Selector) {
+        if selector == #selector(NSResponder.insertNewline(_:)) {
+            if hasMarkedText() {
+                super.doCommand(by: selector)
+                return
+            }
+            let flags = currentKeyFlags.isEmpty
+                ? (NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? [])
+                : currentKeyFlags
+            let wantsNewline = flags.contains(.shift) || flags.contains(.option) || flags.contains(.control)
+            if wantsNewline {
+                super.doCommand(by: selector)
+                recalculateHeight()
+                scrollRangeToVisible(selectedRange())
+                return
+            }
+            onSubmit?()
+            return
+        }
+        super.doCommand(by: selector)
+        if selector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
+            || selector == #selector(NSResponder.insertLineBreak(_:)) {
+            recalculateHeight()
+            scrollRangeToVisible(selectedRange())
+        }
+    }
+
+    override func paste(_ sender: Any?) {
+        pasteAsPlainText(sender)
+        recalculateHeight()
+    }
+
+    func recalculateHeight() {
+        if string.isEmpty && !hasMarkedText() {
+            onHeightChange?(minEditorHeight)
+            return
+        }
+        guard let layoutManager, let textContainer else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let used = layoutManager.usedRect(for: textContainer).height
+        let extraMaxY = layoutManager.extraLineFragmentTextContainer === textContainer
+            ? layoutManager.extraLineFragmentRect.maxY
+            : 0
+        let contentHeight = max(used, extraMaxY)
+        let verticalInset = textContainerInset.height * 2
+        let target = min(maxEditorHeight, max(minEditorHeight, ceil(contentHeight + verticalInset)))
+        onHeightChange?(target)
+    }
+}
+
+private struct ComposerTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    @Binding var isComposing: Bool
+    @Binding var height: CGFloat
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> ComposerScrollView {
+        let scrollView = ComposerScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+
+        let textView = SubmitAwareTextView()
+        textView.delegate = context.coordinator
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainerInset = NSSize(width: 11, height: 11)
+        textView.textContainer?.lineFragmentPadding = 5
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.minSize = NSSize(width: 0, height: 44)
+        textView.applyTypingStyle()
+
+        let coordinator = context.coordinator
+        textView.onSubmit = { [weak coordinator] in
+            coordinator?.parent.onSubmit()
+        }
+        textView.onFocusChange = { [weak coordinator] focused in
+            DispatchQueue.main.async {
+                guard let coordinator, coordinator.parent.isFocused != focused else { return }
+                coordinator.parent.isFocused = focused
+            }
+        }
+        textView.onCompositionChange = { [weak coordinator] composing in
+            DispatchQueue.main.async {
+                guard let coordinator, coordinator.parent.isComposing != composing else { return }
+                coordinator.parent.isComposing = composing
+            }
+        }
+        textView.onHeightChange = { [weak coordinator] newHeight in
+            DispatchQueue.main.async {
+                guard let coordinator, abs(coordinator.parent.height - newHeight) > 0.5 else { return }
+                coordinator.parent.height = newHeight
+            }
+        }
+
+        textView.string = text
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: ComposerScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let textView = scrollView.documentView as? SubmitAwareTextView else { return }
+
+        if text.isEmpty && (!textView.string.isEmpty || textView.hasMarkedText()) {
+            textView.unmarkText()
+            textView.string = ""
+            textView.applyTypingStyle()
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            textView.recalculateHeight()
+        } else if !textView.hasMarkedText() && textView.string != text {
+            textView.string = text
+            textView.applyTypingStyle()
+            let end = NSRange(location: (text as NSString).length, length: 0)
+            textView.setSelectedRange(end)
+            textView.recalculateHeight()
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: ComposerTextEditor
+
+        init(_ parent: ComposerTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? SubmitAwareTextView else { return }
+            let composing = textView.hasMarkedText()
+            if parent.isComposing != composing {
+                parent.isComposing = composing
+            }
+            if !composing {
+                let current = textView.string
+                if parent.text != current {
+                    parent.text = current
+                }
+            }
+            textView.recalculateHeight()
+        }
+    }
+}
+
+// MARK: - Redesigned Floating Glass Composer Popovers
+
+private struct ComposerModelPopover: View {
+    let providers: [ProviderPresetDTO]
+    let selectedProviderId: String
+    let defaultProviderId: String
+    let chatgptPlanType: String
+    let chatgptConnected: Bool
+    let onSelect: (ProviderPresetDTO) -> Void
+    let onOpenSettings: () -> Void
+    let onStartChatGPTLogin: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(spacing: 6) {
+                Text("已配置模型")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+                Spacer()
+                if !providers.isEmpty {
+                    Text("\(providers.count) 个可用")
+                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 11)
+            .padding(.bottom, 7)
+
+            if providers.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Theme.warningSoft)
+                                .frame(width: 30, height: 30)
+                            Image(systemName: "key.horizontal")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Theme.warning)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2.5) {
+                            Text("暂无已配置模型")
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .foregroundStyle(Theme.textPrimary)
+                            Text("请先在设置中填写 API Key 或完成 ChatGPT 订阅授权。")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.textTertiary)
+                                .lineSpacing(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    if !chatgptConnected {
+                        Button(action: onStartChatGPTLogin) {
+                            Label("使用 ChatGPT 授权登录", systemImage: "person.badge.key.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(SprucePrimaryButtonStyle(compact: true))
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            } else {
+                let listContent = VStack(spacing: 3) {
+                    ForEach(providers) { provider in
+                        let isSelected = provider.id == selectedProviderId
+                        let tag: String? = {
+                            if provider.kind == "chatgpt_oauth", !chatgptPlanType.isEmpty {
+                                return chatgptPlanType.uppercased()
+                            }
+                            if providers.count > 1 && provider.id == defaultProviderId {
+                                return "默认"
+                            }
+                            return nil
+                        }()
+
+                        ComposerModelPopoverRow(
+                            provider: provider,
+                            badgeText: tag,
+                            isSelected: isSelected
+                        ) {
+                            onSelect(provider)
+                        }
+                    }
+                }
+                .padding(.horizontal, 6)
+
+                if providers.count > 5 {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        listContent
+                    }
+                    .frame(maxHeight: 264)
+                } else {
+                    listContent
+                }
+            }
+
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.65))
+                .frame(height: 0.5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+
+            PopoverFooterActionRow(
+                icon: "slider.horizontal.3",
+                title: "配置模型与授权…",
+                action: onOpenSettings
+            )
+            .padding(.horizontal, 6)
+            .padding(.bottom, 6)
+        }
+        .frame(width: 292)
+        .glassPopover(cornerRadius: 16)
+    }
+}
+
+private struct ComposerModelPopoverRow: View {
+    let provider: ProviderPresetDTO
+    let badgeText: String?
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isSelected ? Theme.cardSolid : Theme.surfaceSubtle)
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(isSelected ? Theme.accentBorder.opacity(0.65) : .clear, lineWidth: 0.7)
+                        )
+                    Image(systemName: provider.kindIcon)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isSelected || isHovering ? Theme.accentInk : Theme.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(provider.displayModelName)
+                            .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
+                            .foregroundStyle(isSelected ? Theme.accentInk : Theme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        if let badgeText {
+                            Text(badgeText)
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(isSelected ? Theme.accentInk : Theme.textTertiary)
+                                .padding(.horizontal, 5.5)
+                                .padding(.vertical, 1.5)
+                                .background(
+                                    Capsule()
+                                        .fill(isSelected ? Theme.cardSolid.opacity(0.85) : Theme.surfaceSubtle)
+                                )
+                        }
+                    }
+
+                    Text(provider.name)
+                        .font(.system(size: 11))
+                        .foregroundStyle(isSelected ? Theme.accentInk.opacity(0.75) : Theme.textTertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+
+                if isSelected {
+                    ZStack {
+                        Circle()
+                            .fill(Theme.accent.opacity(0.18))
+                            .frame(width: 20, height: 20)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Theme.accentInk)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        isSelected
+                        ? Theme.selectionFill
+                        : (isHovering ? Theme.hoverFill.opacity(0.75) : .clear)
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSelected ? Theme.accentBorder.opacity(0.45) : .clear, lineWidth: 0.65)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+private struct ComposerModePopover: View {
+    let selectedMode: ChatMode
+    let onSelect: (ChatMode) -> Void
+    let onStartInterview: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("对话模式")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, 12)
+                .padding(.top, 11)
+                .padding(.bottom, 7)
+
+            VStack(spacing: 3) {
+                ForEach(ChatMode.allCases) { mode in
+                    ComposerModePopoverRow(
+                        mode: mode,
+                        isSelected: mode == selectedMode
+                    ) {
+                        onSelect(mode)
+                    }
+                }
+            }
+            .padding(.horizontal, 6)
+
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.65))
+                .frame(height: 0.5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+
+            PopoverFooterActionRow(
+                icon: "mic.badge.plus",
+                title: "让顾问主动发起冷启动访谈…",
+                action: onStartInterview
+            )
+            .padding(.horizontal, 6)
+            .padding(.bottom, 6)
+        }
+        .frame(width: 272)
+        .glassPopover(cornerRadius: 16)
+    }
+}
+
+private struct ComposerModePopoverRow: View {
+    let mode: ChatMode
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isSelected ? Theme.cardSolid : Theme.surfaceSubtle)
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(isSelected ? Theme.accentBorder.opacity(0.65) : .clear, lineWidth: 0.7)
+                        )
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isSelected || isHovering ? Theme.accentInk : Theme.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mode.label)
+                        .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
+                        .foregroundStyle(isSelected ? Theme.accentInk : Theme.textPrimary)
+                        .lineLimit(1)
+                    Text(mode.shortSubtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(isSelected ? Theme.accentInk.opacity(0.75) : Theme.textTertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+
+                if isSelected {
+                    ZStack {
+                        Circle()
+                            .fill(Theme.accent.opacity(0.18))
+                            .frame(width: 20, height: 20)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Theme.accentInk)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        isSelected
+                        ? Theme.selectionFill
+                        : (isHovering ? Theme.hoverFill.opacity(0.75) : .clear)
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSelected ? Theme.accentBorder.opacity(0.45) : .clear, lineWidth: 0.65)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+private struct PopoverFooterActionRow: View {
+    let icon: String
+    let title: String
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isHovering ? Theme.accentInk : Theme.textSecondary)
+                    .frame(width: 18)
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isHovering ? Theme.textPrimary : Theme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(isHovering ? Theme.hoverFill.opacity(0.78) : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
 // MARK: - Context Options Popover
 
 private struct ChatContextOptionsPopover: View {
@@ -656,48 +1390,98 @@ private struct ChatContextOptionsPopover: View {
     var body: some View {
         @Bindable var state = state
 
-        VStack(alignment: .leading, spacing: 14) {
-            Text("检索上下文选项")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("检索上下文")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, 14)
+                .padding(.top, 11)
+                .padding(.bottom, 8)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle(isOn: $state.useAsOfDate) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(state.useAsOfDate ? Theme.selectionFill : Theme.surfaceSubtle)
+                            .frame(width: 28, height: 28)
+                        Image(systemName: state.useAsOfDate ? "calendar.badge.clock" : "calendar")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(state.useAsOfDate ? Theme.accentInk : Theme.accent)
+                    }
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text("按历史日期回溯")
                             .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Theme.textPrimary)
                         Text("仅检索该日期之前的记忆，还原当时视角")
                             .font(.system(size: 11))
-                            .foregroundStyle(Theme.textSecondary)
+                            .foregroundStyle(Theme.textTertiary)
                     }
+
+                    Spacer(minLength: 6)
+
+                    Toggle("", isOn: $state.useAsOfDate)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
                 }
-                .toggleStyle(.switch)
-                .controlSize(.small)
 
                 if state.useAsOfDate {
-                    DatePicker("截止日期", selection: $state.asOfDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                        .font(.system(size: 12))
-                        .padding(.top, 2)
+                    HStack {
+                        Text("截止日期")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        DatePicker("", selection: $state.asOfDate, displayedComponents: .date)
+                            .labelsHidden()
+                            .datePickerStyle(.compact)
+                            .controlSize(.small)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Theme.surfaceSubtle.opacity(0.7), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 12)
 
-            Divider()
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.65))
+                .frame(height: 0.5)
+                .padding(.horizontal, 12)
 
-            Toggle(isOn: $state.allowSensitive) {
+            HStack(alignment: .center, spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(state.allowSensitive ? Theme.warningSoft : Theme.surfaceSubtle)
+                        .frame(width: 28, height: 28)
+                    Image(systemName: state.allowSensitive ? "lock.open" : "lock.shield")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(state.allowSensitive ? Theme.warning : Theme.accent)
+                }
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("本轮允许敏感记忆")
                         .font(.system(size: 12.5, weight: .medium))
-                    Text("默认拦截 privacy: sensitive 记忆，勾选仅本轮放行")
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("默认拦截 privacy: sensitive，开启仅本轮放行")
                         .font(.system(size: 11))
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(Theme.textTertiary)
                 }
+
+                Spacer(minLength: 6)
+
+                Toggle("", isOn: $state.allowSensitive)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .tint(state.allowSensitive ? Theme.warning : Theme.accent)
             }
-            .toggleStyle(.switch)
-            .controlSize(.small)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
         }
-        .padding(16)
-        .frame(width: 300)
+        .frame(width: 312)
+        .glassPopover(cornerRadius: 16)
     }
 }
 

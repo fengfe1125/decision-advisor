@@ -74,10 +74,11 @@ enum Theme {
     )
 
     // Typography
-    static let textPrimary = dynamic(
+    static let textPrimaryNS = dynamicNSColor(
         light: (0.110, 0.122, 0.118),  // #1C1F1E
         dark:  (0.918, 0.937, 0.925)   // #EAEFEC
     )
+    static let textPrimary = Color(nsColor: textPrimaryNS)
     static let textSecondary = dynamic(
         light: (0.373, 0.400, 0.384),  // #5F6662
         dark:  (0.612, 0.667, 0.643)   // #9CAAA4
@@ -101,10 +102,11 @@ enum Theme {
         dark:  (0.361, 0.690, 0.580)
     )
     /// 浅底上的绿色文字（选中项、标签），比 accent 略深以保证可读性
-    static let accentInk = dynamic(
+    static let accentInkNS = dynamicNSColor(
         light: (0.165, 0.478, 0.333),  // #2A7A55 淡绿底上的深绿字
         dark:  (0.620, 0.890, 0.790)   // #9EE3C9
     )
+    static let accentInk = Color(nsColor: accentInkNS)
     static let accentSoft = dynamic(
         light: (0.420, 0.784, 0.608), dark: (0.420, 0.800, 0.670),
         lightAlpha: 0.10, darkAlpha: 0.15
@@ -294,6 +296,27 @@ struct GlassCapsuleModifier: ViewModifier {
     }
 }
 
+/// 悬浮弹出卡片（模型切换、对话模式、检索上下文）：匹配「白玻璃 · White Glass」界面质感。
+struct GlassPopoverModifier: ViewModifier {
+    var cornerRadius: CGFloat = 16
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background {
+                ZStack {
+                    VisualEffectBackground(material: .popover, blendingMode: .withinWindow)
+                    Theme.cardSolid.opacity(0.95)
+                }
+                .clipShape(shape)
+            }
+            .overlay(shape.strokeBorder(Theme.glassEdge, lineWidth: 1))
+            .overlay(shape.strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 0.75))
+            .shadow(color: Color.black.opacity(0.11), radius: 22, y: 10)
+            .shadow(color: Color.black.opacity(0.04), radius: 3, y: 1)
+    }
+}
+
 extension View {
     func glassPanel(cornerRadius: CGFloat = Theme.panelRadius, tint: Color = Theme.sidebarBg, shadow: Bool = true) -> some View {
         modifier(GlassPanelModifier(cornerRadius: cornerRadius, tint: tint, shadow: shadow))
@@ -305,6 +328,10 @@ extension View {
 
     func glassCapsule() -> some View {
         modifier(GlassCapsuleModifier())
+    }
+
+    func glassPopover(cornerRadius: CGFloat = 16) -> some View {
+        modifier(GlassPopoverModifier(cornerRadius: cornerRadius))
     }
 }
 

@@ -61,6 +61,15 @@ enum ChatMode: String, CaseIterable, Identifiable, Sendable {
         case .reflect: return "指定想回顾的时间段、人物或情绪主题…"
         }
     }
+
+    var shortSubtitle: String {
+        switch self {
+        case .chat: return "自由倾诉当下情绪，温和陪伴"
+        case .decision: return "9 步反讨好拆解，强制给出反方"
+        case .interview: return "温和追问，逐步建立核心档案"
+        case .reflect: return "回看近期速记，梳理情绪模式"
+        }
+    }
 }
 
 enum MemoryViewMode: String, CaseIterable, Identifiable, Sendable {
@@ -416,6 +425,29 @@ struct ProviderPresetDTO: Codable, Identifiable, Hashable, Sendable {
         case apiKey = "api_key"
         case apiKeyMasked = "api_key_masked"
         case hasApiKey = "has_api_key"
+    }
+}
+
+extension ProviderPresetDTO {
+    /// 是否已完成密钥配置或 OAuth 订阅授权
+    var isConfigured: Bool {
+        hasApiKey == true
+    }
+
+    var displayModelName: String {
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? name : trimmed
+    }
+
+    var kindIcon: String {
+        switch kind {
+        case "chatgpt_oauth": return "person.badge.key"
+        case "deepseek": return "cpu"
+        case "openai_compatible": return "network"
+        case "claude": return "sparkle"
+        case "gemini": return "diamond"
+        default: return "cube"
+        }
     }
 }
 
