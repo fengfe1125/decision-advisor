@@ -720,3 +720,286 @@ def test_chatgpt_oauth_login_models_and_responses_api(temp_env, monkeypatch: pyt
     assert out["oauth"]["connected"] is False
     assert out["oauth"]["has_issued_client_id"] is True
     assert any(u == "https://auth.openai.com/api/accounts/oauth/revoke" for _, u, _ in recorded_requests)
+
+
+def test_onboarding_status_quick_profile_and_interview(temp_env, monkeypatch):
+    import app.main as main_mod
+    from app.prompts import build_chat_system_prompt
+    from app.providers import ChatCompletionResult
+
+    vault = temp_env["vault"]
+    client = TestClient(app)
+
+    # 1. Fresh/sparse vault -> needs onboarding (only values.md has short text; 4 slots empty)
+    st0 = client.get("/api/onboarding/status").json()
+    assert st0["needs_onboarding"] is True
+    assert st0["completeness"] < 40
+    assert "identity" in st0["missing_slots"]
+    assert "boundaries" in st0["missing_slots"]
+    assert len(st0["slots"]) == 5
+    # Privacy check: <private> block in values.md must never leak into excerpt
+    values_slot = next(s for s in st0["slots"] if s["id"] == "values")
+    assert "123456" not in values_slot["excerpt"]
+
+    # 2. Dismissing sets needs_onboarding = False, resetting restores it
+    dis = client.post("/api/onboarding/state", json={"state": "dismissed"}).json()
+    assert dis["ok"] is True
+    assert dis["status"]["dismissed"] is True
+    assert dis["status"]["needs_onboarding"] is False
+
+    client.post("/api/onboarding/state", json={"state": ""})
+
+    # 3. Quick profile preview (commit=False) returns proposals & diff without modifying disk
+    quick_payload = {
+        "preferred_name": "阿木",
+        "life_stage": "独立开发者第 2 年，兼顾家庭与个人成长，探索可持续节奏。",
+        "current_focus": "决定下半年是全职深耕产品还是接顾问项目，希望平衡自由与现金流。",
+        "core_values": ["自主权", "健康", "长期成长"],
+        "values_note": "宁可慢一点，也不牺牲睡眠与长期判断力。",
+        "boundaries": "绝不接受长期无意义内耗的加班，不在情绪上头当晚做不可逆的重大决定。",
+        "patterns": "压力大时容易过度搜集信息拖延；独处散步和复盘写作最能帮我充能恢复清醒。",
+        "goals": "未来 6 个月跑通个人产品的稳定订阅闭环，同时每周保持三次力量训练。",
+        "advisor_style": "direct_critic",
+        "advisor_style_note": "结论先行，直接指出盲区。",
+        "commit": False,
+    }
+    prev = client.post("/api/onboarding/quick-profile", json=quick_payload).json()
+    assert prev["ok"] is True
+    assert prev["written"] == []
+    assert len(prev["proposals"]) == 5
+    assert not (vault / "00-核心自我" / "identity.md").exists()
+
+    # 4. Quick profile commit writes all 5 slots and non-destructively merges existing values.md
+    quick_payload["commit"] = True
+    committed = client.post("/api/onboarding/quick-profile", json=quick_payload).json()
+    assert committed["ok"] is True
+    assert len(committed["written"]) == 5
+    assert committed["status"]["completed"] is True
+    assert committed["status"]["needs_onboarding"] is False
+    assert committed["status"]["completeness"] == 100
+
+    identity_raw = (vault / "00-核心自我" / "identity.md").read_text(encoding="utf-8")
+    assert "阿木" in identity_raw
+    assert "直率泼冷水" in identity_raw
+    values_raw = (vault / "00-核心自我" / "values.md").read_text(encoding="utf-8")
+    assert "1. 自主权" in values_raw  # Existing content preserved
+    assert "引导建档补充" in values_raw  # New content appended
+
+    # 5. Slot-aware interview prompt injects completeness & slot table
+    store = MemoryStore(vault)
+    sys_prompt = build_chat_system_prompt(store, "interview", store.load_core_self(), [], focus_slot="boundaries")
+    assert "当前核心自我档案体检" in sys_prompt
+    assert "00-核心自我/boundaries.md" in sys_prompt
+
+    # 6. Advisor-initiated interview start (mocked LLM + fallback path)
+    async def fake_call_llm(provider, sys_p, msgs, **kwargs):
+        assert "当前核心自我档案体检" in sys_p
+        return ChatCompletionResult(content="你好阿木，我们先聊聊你最在意的边界，最近有没有哪件小事让你觉得被踩线了？", model="deepseek-v4-pro")
+
+    monkeypatch.setattr(main_mod, "call_llm", fake_call_llm)
+    started = client.post("/api/onboarding/interview/start", json={"focus_slot": "boundaries"}).json()
+    assert started["ok"] is True
+    assert started["mode"] == "interview"
+    assert started["used_fallback"] is False
+    assert "阿木" in started["opening_message"]
+
+    sess = client.get(f"/api/sessions/{started['session_id']}").json()
+    assert len(sess["messages"]) == 1
+    assert sess["messages"][0]["role"] == "assistant"
+
+    # Fallback path when provider raises error
+    async def broken_call_llm(*args, **kwargs):
+        raise main_mod.ProviderError("no key")
+
+    monkeypatch.setattr(main_mod, "call_llm", broken_call_llm)
+    fallback_started = client.post("/api/onboarding/interview/start", json={"focus_slot": "goals"}).json()
+    assert fallback_started["ok"] is True
+    assert fallback_started["used_fallback"] is True
+    assert "当下课题与目标" in fallback_started["opening_message"]
+
+
+def test_cross_agent_memory_import_parsers_and_extract(temp_env, monkeypatch):
+    import app.main as main_mod
+    from app.providers import ChatCompletionResult
+
+    vault = temp_env["vault"]
+    client = TestClient(app)
+
+    # 1. Copyable prompt templates
+    prompts_resp = client.get("/api/import/prompts").json()
+    assert len(prompts_resp["templates"]) >= 2
+    assert "Markdown" in prompts_resp["templates"][0]["prompt"]
+
+    # 2. Preview pasted prompt text with <private> block detection
+    paste_prev = client.post(
+        "/api/import/preview",
+        json={
+            "raw_text": "## 我是谁\n我是产品经理，重视自主权。\n<private>银行卡999888</private>\n## 目标\n今年启动独立项目。",
+            "source_hint": "prompt_paste",
+        },
+    ).json()
+    assert paste_prev["detected_source"] == "pasted_text"
+    assert len(paste_prev["items"]) == 1
+    assert any("<private>" in w for w in paste_prev["warnings"])
+    assert "999888" not in paste_prev["items"][0]["preview"]
+
+    # 3. Preview ChatGPT official export ZIP (high-signal reflection vs. low-signal Traceback chat)
+    chatgpt_convs = [
+        {
+            "title": "是否要离开高压大厂转独立开发",
+            "create_time": 1735689600,
+            "current_node": "n2",
+            "mapping": {
+                "n1": {
+                    "id": "n1",
+                    "parent": None,
+                    "message": {
+                        "author": {"role": "user"},
+                        "create_time": 1735689600,
+                        "content": {"parts": ["我最近非常焦虑和内耗，一直在纠结人生选择：要不要辞职追求更大的自主权和价值观一致的工作？家人也有不同看法。"]},
+                    },
+                },
+                "n2": {
+                    "id": "n2",
+                    "parent": "n1",
+                    "message": {
+                        "author": {"role": "assistant"},
+                        "create_time": 1735689610,
+                        "content": {"parts": ["我们可以先盘点你的底线、财务安全垫和最小验证动作。"]},
+                    },
+                },
+            },
+        },
+        {
+            "title": "Fix python error",
+            "create_time": 1735689700,
+            "current_node": "c1",
+            "mapping": {
+                "c1": {
+                    "id": "c1",
+                    "parent": None,
+                    "message": {
+                        "author": {"role": "user"},
+                        "create_time": 1735689700,
+                        "content": {
+                            "parts": [
+                                "Traceback (most recent call last):\nSyntaxError: invalid syntax\n```python\nprint(1)\n```\n```python\nprint(2)\n```"
+                            ]
+                        },
+                    },
+                }
+            },
+        },
+    ]
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w") as zf:
+        zf.writestr("conversations.json", json.dumps(chatgpt_convs, ensure_ascii=False))
+    cgpt_prev = client.post(
+        "/api/import/preview",
+        json={
+            "files": [
+                {
+                    "filename": "chatgpt-export.zip",
+                    "content_base64": base64.b64encode(zip_buf.getvalue()).decode("ascii"),
+                }
+            ]
+        },
+    ).json()
+    assert cgpt_prev["detected_source"] == "chatgpt_export"
+    assert cgpt_prev["total_items"] == 2
+    assert cgpt_prev["recommended_items"] == 1
+    assert cgpt_prev["items"][0]["title"] == "是否要离开高压大厂转独立开发"
+    assert cgpt_prev["items"][0]["recommended"] is True
+    assert cgpt_prev["items"][1]["recommended"] is False
+
+    # 4. Preview Claude memories.json + conversations.json
+    claude_mems = [{"conversations_memory": "用户叫林深，非常看重长期主义和睡眠健康，反感无效社交。", "project_memories": {"p1": "正在打造个人成长工具"}}]
+    cm_prev = client.post(
+        "/api/import/preview",
+        json={
+            "files": [
+                {
+                    "filename": "memories.json",
+                    "content_base64": base64.b64encode(json.dumps(claude_mems, ensure_ascii=False).encode("utf-8")).decode("ascii"),
+                }
+            ]
+        },
+    ).json()
+    assert cm_prev["detected_source"] == "claude_memories"
+    assert len(cm_prev["items"]) == 2
+    assert all(i["recommended"] for i in cm_prev["items"])
+
+    # 5. Preview Generic Memory JSON (Mem0 & PAM & Letta)
+    mem0_payload = {"results": [{"memory": "偏好简洁直接的反馈，不喜欢客套", "created_at": "2026-01-10", "categories": ["preference"]}]}
+    mem0_prev = client.post(
+        "/api/import/preview",
+        json={"raw_text": json.dumps(mem0_payload, ensure_ascii=False)},
+    ).json()
+    assert mem0_prev["detected_source"] == "mem0_json"
+    assert len(mem0_prev["items"]) == 1
+
+    pam_payload = {
+        "schema": "pam/1.0",
+        "profile": {"name": "林深", "role": "工程师"},
+        "memories": [{"content": "2025 年决定减少熬夜，把健康排在第一位", "date": "2025-09-01"}],
+    }
+    pam_prev = client.post(
+        "/api/import/preview",
+        json={"raw_text": json.dumps(pam_payload, ensure_ascii=False)},
+    ).json()
+    assert pam_prev["detected_source"] == "pam_json"
+    assert len(pam_prev["items"]) == 2
+
+    # 6. Extract proposals via mocked LLM -> verifies <private> stripping & proposal enrichment
+    captured_user_prompts: list[str] = []
+
+    async def fake_import_llm(provider, sys_p, msgs, **kwargs):
+        captured_user_prompts.append(msgs[0]["content"])
+        fake_json = {
+            "proposals": [
+                {
+                    "action": "create",
+                    "path": "00-核心自我/identity.md",
+                    "title": "核心身份与背景",
+                    "summary": "从外部 AI 导入林深的身份背景与沟通偏好",
+                    "importance": 9,
+                    "emotions": [],
+                    "relations": [],
+                    "privacy": "private",
+                    "evidence": "用户叫林深，偏好简洁直接反馈",
+                    "content": "---\ntitle: 核心身份与背景\nprivacy: private\nsource: import\n---\n\n# 核心身份与背景\n\n- 称呼：林深\n- 沟通偏好：简洁直接，不喜欢客套，注重长期主义与睡眠健康。\n",
+                }
+            ]
+        }
+        return ChatCompletionResult(content=json.dumps(fake_json, ensure_ascii=False), model="deepseek-v4-pro")
+
+    monkeypatch.setattr(main_mod, "call_llm", fake_import_llm)
+    ext = client.post(
+        "/api/import/extract",
+        json={
+            "source_label": "Claude 官方记忆",
+            "items": [
+                {
+                    "id": "imp_1",
+                    "source_type": "claude_memories",
+                    "source_label": "Claude 官方记忆",
+                    "title": "Claude 长期记忆",
+                    "date": "2026-01-10",
+                    "content": "用户叫林深 <private>绝密密码ABCD</private> 偏好简洁直接的反馈。",
+                }
+            ],
+        },
+    ).json()
+    assert len(ext["proposals"]) == 1
+    assert ext["proposals"][0]["level"] == 3
+    assert ext["proposals"][0]["path"] == "00-核心自我/identity.md"
+    assert "绝密密码ABCD" not in captured_user_prompts[0]
+    assert "[已根据本地隐私规则隐藏]" in captured_user_prompts[0]
+
+    # Commit the extracted proposal and verify it lands on disk cleanly
+    commit_res = client.post(
+        "/api/proposals/commit",
+        json={"items": [{"action": "create", "path": ext["proposals"][0]["path"], "title": ext["proposals"][0]["title"], "content": ext["proposals"][0]["content"], "privacy": "private"}]},
+    ).json()
+    assert commit_res["ok"] is True
+    assert (vault / "00-核心自我" / "identity.md").exists()

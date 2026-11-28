@@ -57,6 +57,17 @@ struct DecisionAdvisorApp: App {
             }
 
             CommandMenu("记忆库") {
+                Button("认识我 · 初始化向导…") {
+                    appState.openOnboardingWizard(route: "hub")
+                }
+
+                Button("导入其他 Agent 记忆…") {
+                    appState.openMemoryImportSheet()
+                }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+
+                Divider()
+
                 Button("刷新状态与记忆") {
                     Task {
                         await appState.bootstrap()

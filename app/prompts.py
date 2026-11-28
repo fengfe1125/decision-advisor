@@ -5,7 +5,8 @@ import re
 from datetime import datetime
 from typing import Any
 
-from .memory_store import MemoryDoc, MemoryStore
+from .memory_store import MemoryDoc, MemoryStore, strip_private_blocks
+from .onboarding import build_interview_slot_guidance
 
 MODE_INSTRUCTIONS: dict[str, str] = {
     "chat": (
@@ -25,10 +26,11 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "9) 提示我点击「✨ 提炼记忆提案」将本次推演半自动建档至 04-决策实验室/进行中/。"
     ),
     "interview": (
-        "【当前激活模式：🎙️ 冷启动深度访谈】\n"
+        "【当前激活模式：🎙️ 冷启动深度访谈（槽位感知孵化）】\n"
         "- 每次只问 1～2 个温和、具体、有画面感的问题，绝不一次丢一长串问卷；\n"
-        "- 先检查 00-核心自我/ 里哪些还是“待补充”，优先从最有温度的切口聊起（成长转折 / 印象最深的事 / 核心底线 / 重要的人 / 当下课题）；\n"
-        "- 每次聊出足够素材后，提醒我可以点「✨ 提炼记忆提案」把聊出来的内容半自动写入核心档案和经历库。"
+        "- 严格参考下方「当前核心自我档案体检」，优先围绕标注为 ⬜ 空白 或 🟡 待充实 的维度循序渐进地了解我；\n"
+        "- 先用 1～2 句真诚回应我上一轮说的细节或情绪，再自然切入下一个小问题；\n"
+        "- 每聊出足够素材（覆盖 1～2 个核心维度或一段深刻经历）后，提醒我可以点「✨ 提炼记忆」把聊出来的内容半自动写入核心档案和经历库。"
     ),
     "reflect": (
         "【当前激活模式：🔍 周期反思与收件箱整理】\n"
@@ -44,6 +46,7 @@ def build_chat_system_prompt(
     core_docs: list[MemoryDoc],
     retrieved_docs: list[MemoryDoc],
     allow_sensitive: bool = False,
+    focus_slot: str | None = None,
 ) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
     protocol = store.read_protocol_prompt()
@@ -54,9 +57,11 @@ def build_chat_system_prompt(
         protocol,
         "---",
         mode_block,
-        "---",
-        "## 一、我的核心自我档案（00-核心自我，全量常驻记忆）",
     ]
+    if mode == "interview":
+        sections.append(build_interview_slot_guidance(store, focus_slot=focus_slot))
+    sections.append("---")
+    sections.append("## 一、我的核心自我档案（00-核心自我，全量常驻记忆）")
     if core_docs:
         for doc in core_docs:
             sanitized = store.sanitize_for_llm(doc, allow_sensitive=allow_sensitive)
@@ -165,3 +170,102 @@ def parse_proposals_json(raw_text: str) -> list[dict[str, Any]]:
     if isinstance(data, dict) and isinstance(data.get("proposals"), list):
         return [item for item in data["proposals"] if isinstance(item, dict)]
     return []
+
+
+def build_interview_kickoff_prompts(
+    store: MemoryStore,
+    *,
+    focus_slot: str | None = None,
+    allow_sensitive: bool = False,
+) -> tuple[str, list[dict[str, str]]]:
+    """Build prompts for advisor-initiated opening message in cold-start interview."""
+    core_docs = store.load_core_self(allow_sensitive=allow_sensitive)
+    system_prompt = build_chat_system_prompt(
+        store,
+        "interview",
+        core_docs,
+        [],
+        allow_sensitive=allow_sensitive,
+        focus_slot=focus_slot,
+    )
+    user_messages = [
+        {
+            "role": "user",
+            "content": (
+                "（系统内部触发：用户刚刚开启了一次「冷启动访谈」希望你主动破冰，请不要提及这条系统触发说明。"
+                "请直接以温和、克制、真诚的语气向用户打个简短招呼，说明你们会循序渐进地互相了解，并紧扣上方档案体检里最优先的维度提出 1～2 个轻松、有画面感的问题，全文控制在 180 字以内。）"
+            ),
+        }
+    ]
+    return system_prompt, user_messages
+
+
+def build_import_extraction_prompts(
+    store: MemoryStore,
+    batch_text: str,
+    source_label: str,
+    existing_paths: list[str],
+    allow_sensitive: bool = False,
+) -> tuple[str, list[dict[str, str]]]:
+    """Build prompts that synthesize external Agent memories (ChatGPT/Claude/Mem0/PAM/MD) into our vault schema."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    core_docs = store.load_core_self(allow_sensitive=allow_sensitive)
+    core_preview = "\n\n".join(
+        f"### {d.rel_path}\n{store.sanitize_for_llm(d, allow_sensitive=allow_sensitive)[:1200]}"
+        for d in core_docs
+    ) or "（当前核心自我档案为空）"
+
+    safe_batch = strip_private_blocks(batch_text)
+
+    system_prompt = f"""你是个人成长记忆库的「跨 Agent 记忆迁移编译引擎」。当前日期是 {today}，导入来源是「{source_label}」。
+你的任务是阅读用户从其他 AI / Agent 导入的记忆或历史对话片段，**去噪、去重、合并**，提炼出真正值得长期保存在本地成长决策顾问记忆库中的结构化变更提案（供用户逐条审核 Diff 后确认写入）。
+
+严格遵守以下规则：
+1. **高信噪比去噪**：彻底忽略一次性代码报错、语法查询、翻译、纯百科问答或无实质个人信息的闲聊；只提炼真正反映用户是谁、价值观、红线底线、情绪/决策模式、阶段目标、重要人物、高显著经历或认知演进的内容。如果没有值得沉淀的内容，返回 `{{"proposals": []}}`。
+2. **与现有档案平滑融合（防重复覆盖）**：
+   - 先对照下方「当前核心自我文件内容参考」和「当前已有文件列表」；
+   - 若要更新已存在的 `00-核心自我/*.md`，`action` 必须用 `"update"`，**完整保留原有内容**并在对应小节或新增小节中自然融合新信息，绝不删抹已有记录；
+   - 严禁编造素材中未提及的事实、日期或情绪。
+3. **目标路径规范（必须相对路径且以 `.md` 结尾）**：
+   - 核心自我：`00-核心自我/identity.md`（身份、阶段、沟通风格偏好）/ `values.md`（核心价值观）/ `boundaries.md`（底线红线）/ `patterns.md`（情绪与决策模式）/ `goals.md`（当下课题与目标）
+   - 人生章节：`01-人生章节/YYYY-YYYY-章节名.md`
+   - 经历与感受：`02-经历与感受/YYYY/YYYY-MM-DD-简短标题.md`（不知具体日期则用 `YYYY-01-01` 并在正文注明大致时间；YAML Frontmatter 必须包含 `title`、`event_time`、`recorded_at: {today}`、`importance`、`people`、`emotions`、`privacy: private`、`source: import`、`imported_from: "{source_label}"`）
+   - 重要人物：`03-重要关系/人物称呼.md`
+   - 过往或进行中决策：`04-决策实验室/进行中/{today}-决策简称.md` 或 `04-决策实验室/已复盘/YYYY-MM-DD-决策简称.md`
+   - 观点演变：`05-认知演进与反思/观点演变日志.md`（`action` 用 `"append"`）
+4. **隐私保护**：所有提案默认 `privacy: "private"`；绝不把密码、密钥、银行卡号或证件号写入内容。
+5. **仅输出纯 JSON**，不要包裹额外解释文字，格式如下：
+{{
+  "proposals": [
+    {{
+      "action": "create",
+      "path": "00-核心自我/identity.md",
+      "title": "核心身份与沟通偏好",
+      "summary": "2-3行说明：从外部记忆中提炼出哪些关于用户背景或偏好的信息",
+      "importance": 9,
+      "emotions": [],
+      "relations": ["00-核心自我/values"],
+      "privacy": "private",
+      "evidence": "触发本条提案的外部记忆原话/片段要点",
+      "content": "完整规范的 Markdown 内容（含 YAML frontmatter，标注 source: import）"
+    }}
+  ]
+}}
+
+当前已有文件列表（供双链引用或决定 update/append）：
+{chr(10).join('- ' + p for p in existing_paths[:80]) or '（暂无已有记忆文件）'}
+
+当前核心自我文件内容参考：
+{core_preview}
+"""
+
+    user_messages = [
+        {
+            "role": "user",
+            "content": (
+                f"以下是用户从「{source_label}」导出的记忆/对话素材，请按规范去噪提炼为结构化记忆提案 JSON：\n\n"
+                f"{safe_batch}"
+            ),
+        }
+    ]
+    return system_prompt, user_messages

@@ -600,3 +600,189 @@ enum StreamEvent: Sendable {
     case error(String)
     case done(String)
 }
+
+// MARK: - Onboarding & Cross-Agent Memory Import
+
+struct OnboardingSlotDTO: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let path: String
+    let title: String
+    let description: String
+    let interviewPrompt: String
+    let exists: Bool
+    let status: String // "empty" | "partial" | "ready"
+    let charCount: Int
+    let excerpt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, path, title, description, exists, status, excerpt
+        case interviewPrompt = "interview_prompt"
+        case charCount = "char_count"
+    }
+}
+
+struct AdvisorStyleOptionDTO: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let label: String
+    let description: String
+}
+
+struct OnboardingStatusDTO: Codable, Sendable {
+    let needsOnboarding: Bool
+    let completed: Bool
+    let dismissed: Bool
+    let onboardingState: String
+    let completeness: Int
+    let readyCount: Int
+    let partialCount: Int
+    let emptyCount: Int
+    let totalSlots: Int
+    let nonCoreMemories: Int
+    let hasProtocol: Bool
+    let missingSlots: [String]
+    let partialSlots: [String]
+    let nextSlotId: String
+    let slots: [OnboardingSlotDTO]
+    let advisorStyles: [AdvisorStyleOptionDTO]?
+
+    enum CodingKeys: String, CodingKey {
+        case completed, dismissed, completeness, slots
+        case needsOnboarding = "needs_onboarding"
+        case onboardingState = "onboarding_state"
+        case readyCount = "ready_count"
+        case partialCount = "partial_count"
+        case emptyCount = "empty_count"
+        case totalSlots = "total_slots"
+        case nonCoreMemories = "non_core_memories"
+        case hasProtocol = "has_protocol"
+        case missingSlots = "missing_slots"
+        case partialSlots = "partial_slots"
+        case nextSlotId = "next_slot_id"
+        case advisorStyles = "advisor_styles"
+    }
+}
+
+struct OnboardingStateResponse: Codable, Sendable {
+    let ok: Bool
+    let status: OnboardingStatusDTO
+}
+
+struct QuickProfilePayload: Encodable, Sendable {
+    let preferredName: String
+    let lifeStage: String
+    let currentFocus: String
+    let coreValues: [String]
+    let valuesNote: String
+    let boundaries: String
+    let patterns: String
+    let goals: String
+    let advisorStyle: String
+    let advisorStyleNote: String
+    var commit: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case boundaries, patterns, goals, commit
+        case preferredName = "preferred_name"
+        case lifeStage = "life_stage"
+        case currentFocus = "current_focus"
+        case coreValues = "core_values"
+        case valuesNote = "values_note"
+        case advisorStyle = "advisor_style"
+        case advisorStyleNote = "advisor_style_note"
+    }
+}
+
+struct QuickProfileResponse: Codable, Sendable {
+    let ok: Bool
+    let written: [String]
+    let proposals: [MemoryProposal]
+    let status: OnboardingStatusDTO
+}
+
+struct InterviewStartResponse: Codable, Sendable {
+    let ok: Bool
+    let sessionId: String
+    let title: String
+    let mode: String
+    let openingMessage: String
+    let usedFallback: Bool
+    let status: OnboardingStatusDTO
+
+    enum CodingKeys: String, CodingKey {
+        case ok, title, mode, status
+        case sessionId = "session_id"
+        case openingMessage = "opening_message"
+        case usedFallback = "used_fallback"
+    }
+}
+
+struct ImportPromptTemplateDTO: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let prompt: String
+}
+
+struct ImportPromptsResponse: Codable, Sendable {
+    let templates: [ImportPromptTemplateDTO]
+}
+
+struct ImportChunkDTO: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let sourceType: String
+    let sourceLabel: String
+    let title: String
+    let date: String
+    let charCount: Int
+    let signalScore: Int
+    let recommended: Bool
+    var selected: Bool
+    let preview: String
+    let content: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, date, recommended, selected, preview, content
+        case sourceType = "source_type"
+        case sourceLabel = "source_label"
+        case charCount = "char_count"
+        case signalScore = "signal_score"
+    }
+}
+
+struct ImportPreviewResponse: Codable, Sendable {
+    let detectedSource: String
+    let detectedLabel: String
+    let summary: String
+    let totalItems: Int
+    let shownItems: Int
+    let recommendedItems: Int
+    let selectedItems: Int
+    let totalChars: Int
+    let selectedChars: Int
+    let warnings: [String]
+    let items: [ImportChunkDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case summary, warnings, items
+        case detectedSource = "detected_source"
+        case detectedLabel = "detected_label"
+        case totalItems = "total_items"
+        case shownItems = "shown_items"
+        case recommendedItems = "recommended_items"
+        case selectedItems = "selected_items"
+        case totalChars = "total_chars"
+        case selectedChars = "selected_chars"
+    }
+}
+
+struct ImportExtractResponse: Codable, Sendable {
+    let proposals: [MemoryProposal]
+    let providerName: String?
+    let batchesProcessed: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case proposals
+        case providerName = "provider_name"
+        case batchesProcessed = "batches_processed"
+    }
+}

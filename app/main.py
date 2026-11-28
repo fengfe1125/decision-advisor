@@ -51,8 +51,23 @@ from .db import (
 )
 from .git_backup import create_snapshot, list_snapshots, trigger_basic_memory_reindex
 from .mcp_server import router as mcp_router
+from .memory_importer import IMPORT_PROMPT_TEMPLATES, batch_import_chunks, parse_import_payload
 from .memory_store import CATEGORY_ORDER, MemoryStore
-from .prompts import build_chat_system_prompt, build_extraction_prompts, parse_proposals_json
+from .onboarding import (
+    ADVISOR_STYLES,
+    CORE_SLOT_BY_ID,
+    build_interview_opening_fallback,
+    build_quick_profile_proposals,
+    evaluate_onboarding_status,
+    set_onboarding_state,
+)
+from .prompts import (
+    build_chat_system_prompt,
+    build_extraction_prompts,
+    build_import_extraction_prompts,
+    build_interview_kickoff_prompts,
+    parse_proposals_json,
+)
 from .providers import ProviderError, call_llm, stream_llm
 from .search_index import (
     get_index_stats,
@@ -68,6 +83,8 @@ API_CAPABILITIES = [
     "timeline",
     "graph",
     "proposals",
+    "onboarding",
+    "memory_import",
     "mcp",
     "vault_export",
     "chatgpt_oauth",
@@ -217,6 +234,57 @@ class ChatGPTOAuthCompleteCallbackRequest(BaseModel):
 
 class ChatGPTOAuthLogoutRequest(BaseModel):
     reset_client: bool = False
+
+
+class OnboardingStateRequest(BaseModel):
+    state: str = Field(default="dismissed")
+
+
+class QuickProfileRequest(BaseModel):
+    preferred_name: str = ""
+    life_stage: str = ""
+    current_focus: str = ""
+    core_values: list[str] = Field(default_factory=list)
+    values_note: str = ""
+    boundaries: str = ""
+    patterns: str = ""
+    goals: str = ""
+    advisor_style: str = "balanced"
+    advisor_style_note: str = ""
+    commit: bool = True
+
+
+class InterviewStartRequest(BaseModel):
+    focus_slot: str | None = None
+    provider_id: str | None = None
+    allow_sensitive: bool = False
+
+
+class ImportFilePayload(BaseModel):
+    filename: str
+    content_base64: str
+
+
+class ImportPreviewRequest(BaseModel):
+    raw_text: str = ""
+    files: list[ImportFilePayload] = Field(default_factory=list)
+    source_hint: str = "auto"
+
+
+class ImportChunkInput(BaseModel):
+    id: str = ""
+    source_type: str = ""
+    source_label: str = ""
+    title: str = ""
+    date: str = ""
+    content: str
+
+
+class ImportExtractRequest(BaseModel):
+    items: list[ImportChunkInput] = Field(min_length=1)
+    source_label: str = "外部 Agent 记忆"
+    provider_id: str | None = None
+    allow_sensitive: bool = False
 
 
 # ---------- Public Auth Check ----------
@@ -662,6 +730,49 @@ async def chat_stream_with_advisor(req: ChatRequest) -> StreamingResponse:
 # ---------- Semi-Auto Memory Proposals ----------
 
 
+def _enrich_proposals(store: MemoryStore, raw_proposals: list[dict[str, Any]], *, id_prefix: str = "prop") -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for idx, p in enumerate(raw_proposals):
+        rel_path = str(p.get("path", "")).strip()
+        content = str(p.get("content", "")).strip()
+        if not rel_path or not content:
+            continue
+        action = str(p.get("action", "create")).strip().lower()
+        if action not in {"create", "update", "append"}:
+            action = "create"
+        try:
+            full_path = store.resolve_safe_path(rel_path)
+            safe_rel = full_path.relative_to(store.vault_path).as_posix()
+        except ValueError:
+            continue
+
+        exists = full_path.exists()
+        if exists and action == "create":
+            action = "update"
+        level = store.infer_write_level(safe_rel, action)
+        diff = store.compute_diff(safe_rel, content, action) if exists else ""
+
+        enriched.append(
+            {
+                "id": f"{id_prefix}_{idx + 1}",
+                "action": action,
+                "path": safe_rel,
+                "exists": exists,
+                "level": level,
+                "title": str(p.get("title") or Path(safe_rel).stem),
+                "summary": str(p.get("summary") or "待确认写入的记忆条目"),
+                "importance": int(p.get("importance") or 6),
+                "emotions": p.get("emotions") if isinstance(p.get("emotions"), list) else [],
+                "relations": p.get("relations") if isinstance(p.get("relations"), list) else [],
+                "privacy": str(p.get("privacy") or "private"),
+                "evidence": str(p.get("evidence") or ""),
+                "content": content,
+                "diff": diff,
+            }
+        )
+    return enriched
+
+
 @app.post("/api/proposals/extract", dependencies=[Depends(require_auth)])
 async def extract_proposals(req: ExtractRequest) -> dict[str, Any]:
     init_db()
@@ -689,46 +800,7 @@ async def extract_proposals(req: ExtractRequest) -> dict[str, Any]:
             detail=f"模型返回的提案无法解析为 JSON，请重试。原始返回片段：{result.content[:240]}",
         ) from exc
 
-    enriched = []
-    for idx, p in enumerate(raw_proposals):
-        rel_path = str(p.get("path", "")).strip()
-        content = str(p.get("content", "")).strip()
-        if not rel_path or not content:
-            continue
-        action = str(p.get("action", "create")).strip().lower()
-        if action not in {"create", "update", "append"}:
-            action = "create"
-        try:
-            full_path = store.resolve_safe_path(rel_path)
-            safe_rel = full_path.relative_to(store.vault_path).as_posix()
-        except ValueError:
-            continue
-
-        exists = full_path.exists()
-        if exists and action == "create":
-            action = "update"
-        level = store.infer_write_level(safe_rel, action)
-        diff = store.compute_diff(safe_rel, content, action) if exists else ""
-
-        enriched.append(
-            {
-                "id": f"prop_{idx + 1}",
-                "action": action,
-                "path": safe_rel,
-                "exists": exists,
-                "level": level,
-                "title": str(p.get("title") or Path(safe_rel).stem),
-                "summary": str(p.get("summary") or "待确认写入的记忆条目"),
-                "importance": int(p.get("importance") or 6),
-                "emotions": p.get("emotions") if isinstance(p.get("emotions"), list) else [],
-                "relations": p.get("relations") if isinstance(p.get("relations"), list) else [],
-                "privacy": str(p.get("privacy") or "private"),
-                "evidence": str(p.get("evidence") or ""),
-                "content": content,
-                "diff": diff,
-            }
-        )
-
+    enriched = _enrich_proposals(store, raw_proposals, id_prefix="prop")
     if enriched:
         log_proposals(req.session_id, enriched, status="pending")
 
@@ -756,7 +828,231 @@ def commit_proposals(req: CommitRequest) -> dict[str, Any]:
     log_proposals(req.session_id, [i.model_dump() for i in req.items], status="committed", committed_paths=written)
     sync_vault_index(store)
     trigger_basic_memory_reindex()
+
+    if any(p.startswith("00-核心自我/") for p in written):
+        st = evaluate_onboarding_status(store)
+        if st["completeness"] >= 40 and st["onboarding_state"] != "completed":
+            set_onboarding_state("completed")
+
     return {"ok": True, "written": written, "snapshot": snap}
+
+
+# ---------- Onboarding & Profile Initialization ----------
+
+
+@app.get("/api/onboarding/status", dependencies=[Depends(require_auth)])
+def onboarding_status() -> dict[str, Any]:
+    init_db()
+    store = _get_store()
+    out = evaluate_onboarding_status(store)
+    out["advisor_styles"] = [
+        {"id": k, "label": v["label"], "description": v["description"]} for k, v in ADVISOR_STYLES.items()
+    ]
+    return out
+
+
+@app.post("/api/onboarding/state", dependencies=[Depends(require_auth)])
+def update_onboarding_state(req: OnboardingStateRequest) -> dict[str, Any]:
+    init_db()
+    store = _get_store()
+    try:
+        set_onboarding_state(req.state.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "status": evaluate_onboarding_status(store)}
+
+
+@app.post("/api/onboarding/quick-profile", dependencies=[Depends(require_auth)])
+def submit_quick_profile(req: QuickProfileRequest) -> dict[str, Any]:
+    init_db()
+    store = _get_store()
+    proposals = build_quick_profile_proposals(store, req.model_dump())
+    if not proposals:
+        raise HTTPException(status_code=400, detail="请至少填写一项关于你的信息后再保存")
+
+    if not req.commit:
+        return {
+            "ok": True,
+            "written": [],
+            "proposals": proposals,
+            "status": evaluate_onboarding_status(store),
+        }
+
+    written: list[str] = []
+    for p in proposals:
+        saved_rel = store.write_doc(p["path"], p["content"], action="update")
+        written.append(saved_rel)
+
+    set_onboarding_state("completed")
+    snap = create_snapshot(
+        store.vault_path,
+        f"onboarding: 快速建立核心自我档案 ({', '.join(Path(w).stem for w in written)})",
+    )
+    log_proposals(None, proposals, status="committed", committed_paths=written)
+    sync_vault_index(store)
+    trigger_basic_memory_reindex()
+
+    return {
+        "ok": True,
+        "written": written,
+        "proposals": proposals,
+        "snapshot": snap,
+        "status": evaluate_onboarding_status(store),
+    }
+
+
+@app.post("/api/onboarding/interview/start", dependencies=[Depends(require_auth)])
+async def start_onboarding_interview(req: InterviewStartRequest | None = None) -> dict[str, Any]:
+    init_db()
+    body = req or InterviewStartRequest()
+    store = _get_store()
+    status = evaluate_onboarding_status(store)
+
+    focus_slot = body.focus_slot if (body.focus_slot and body.focus_slot in CORE_SLOT_BY_ID) else None
+    title = (
+        f"冷启动访谈 · {CORE_SLOT_BY_ID[focus_slot]['title']}"
+        if focus_slot
+        else "冷启动访谈 · 认识彼此"
+    )
+
+    provider = None
+    try:
+        provider = _select_provider(body.provider_id)
+    except HTTPException:
+        provider = None
+
+    opening_text = ""
+    used_fallback = False
+    model_name = ""
+    provider_name = ""
+
+    if provider is not None:
+        has_cred = bool(provider.api_key) or provider.kind == "chatgpt_oauth"
+        if has_cred:
+            try:
+                sys_prompt, user_msgs = build_interview_kickoff_prompts(
+                    store,
+                    focus_slot=focus_slot,
+                    allow_sensitive=body.allow_sensitive,
+                )
+                res = await call_llm(provider, sys_prompt, user_msgs, max_tokens=1024, timeout=45.0)
+                opening_text = (res.content or "").strip()
+                model_name = res.model or provider.model
+                provider_name = provider.name
+            except ProviderError:
+                opening_text = ""
+
+    if not opening_text:
+        used_fallback = True
+        opening_text = build_interview_opening_fallback(status, focus_slot=focus_slot)
+        provider_name = "引导向导"
+
+    sess = create_session(
+        title=title,
+        mode="interview",
+        provider_id=provider.id if provider else "",
+    )
+    append_message(
+        sess["id"],
+        "assistant",
+        opening_text,
+        model=model_name,
+        provider_name=provider_name,
+    )
+
+    return {
+        "ok": True,
+        "session_id": sess["id"],
+        "title": title,
+        "mode": "interview",
+        "opening_message": opening_text,
+        "used_fallback": used_fallback,
+        "status": status,
+    }
+
+
+# ---------- Cross-Agent Memory Importer ----------
+
+
+@app.get("/api/import/prompts", dependencies=[Depends(require_auth)])
+def get_import_prompts() -> dict[str, Any]:
+    return {"templates": IMPORT_PROMPT_TEMPLATES}
+
+
+@app.post("/api/import/preview", dependencies=[Depends(require_auth)])
+def preview_agent_memory_import(req: ImportPreviewRequest) -> dict[str, Any]:
+    files_payload = [{"filename": f.filename, "content_base64": f.content_base64} for f in req.files]
+    result = parse_import_payload(
+        raw_text=req.raw_text,
+        files=files_payload,
+        source_hint=req.source_hint,
+    )
+    return result
+
+
+@app.post("/api/import/extract", dependencies=[Depends(require_auth)])
+async def extract_imported_memories(req: ImportExtractRequest) -> dict[str, Any]:
+    init_db()
+    store = _get_store()
+    provider = _select_provider(req.provider_id)
+    existing_paths = [d.rel_path for d in store.scan_all(include_system=False)]
+
+    batches = batch_import_chunks([i.model_dump() for i in req.items])
+    if not batches:
+        raise HTTPException(status_code=400, detail="没有可提炼的有效记忆内容")
+
+    merged_by_path: dict[str, dict[str, Any]] = {}
+    ordered_raw: list[dict[str, Any]] = []
+
+    for batch_text in batches:
+        sys_prompt, user_msgs = build_import_extraction_prompts(
+            store,
+            batch_text,
+            req.source_label or "外部 Agent 记忆",
+            existing_paths,
+            allow_sensitive=req.allow_sensitive,
+        )
+        try:
+            result = await call_llm(provider, sys_prompt, user_msgs, temperature=0.2, max_tokens=4096, timeout=150.0)
+        except ProviderError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        try:
+            raw_list = parse_proposals_json(result.content)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"模型返回的导入提案无法解析为 JSON，请重试。原始片段：{result.content[:240]}",
+            ) from exc
+
+        for item in raw_list:
+            path_key = str(item.get("path", "")).strip()
+            if not path_key:
+                continue
+            if path_key in merged_by_path:
+                # If multiple batches touch the same file, append the newer body cleanly
+                prev = merged_by_path[path_key]
+                prev_content = str(prev.get("content", "")).rstrip()
+                new_content = str(item.get("content", "")).strip()
+                if new_content and new_content not in prev_content:
+                    # Strip duplicate frontmatter when combining two batches targeting the same path
+                    new_body = re.sub(r"^---\s*\n.*?\n---\s*\n?", "", new_content, count=1, flags=re.DOTALL).strip()
+                    if new_body:
+                        prev["content"] = f"{prev_content}\n\n{new_body}"
+                        prev["summary"] = f"{prev.get('summary', '')}；{item.get('summary', '')}".strip("；")
+            else:
+                merged_by_path[path_key] = item
+                ordered_raw.append(item)
+
+    enriched = _enrich_proposals(store, ordered_raw, id_prefix="impprop")
+    if enriched:
+        log_proposals(None, enriched, status="pending")
+
+    return {
+        "proposals": enriched,
+        "provider_name": provider.name,
+        "batches_processed": len(batches),
+    }
 
 
 # ---------- Git History & Config ----------

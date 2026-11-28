@@ -55,6 +55,14 @@ struct ContentView: View {
             ProposalConfirmationSheet()
                 .environment(state)
         }
+        .sheet(isPresented: $state.showOnboardingSheet) {
+            OnboardingSheetView()
+                .environment(state)
+        }
+        .sheet(isPresented: $state.showImportSheet) {
+            MemoryImportSheetView()
+                .environment(state)
+        }
     }
 }
 
@@ -99,6 +107,7 @@ struct SidebarRevealButtons: View {
 
 private struct UnifiedSidebarView: View {
     @Environment(AppState.self) private var state
+    @Environment(UpdateChecker.self) private var updater
     @State private var isNewChatHovering = false
 
     var body: some View {
@@ -132,14 +141,27 @@ private struct UnifiedSidebarView: View {
                         Text("成长决策顾问")
                             .font(.system(size: 13.5, weight: .semibold))
                             .foregroundStyle(Theme.textPrimary)
-                        if let ver = state.health?.version, !ver.isEmpty {
-                            Text("v\(ver)")
-                                .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(Theme.accent)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1.5)
-                                .background(Theme.accentSoft, in: Capsule())
+                        Button {
+                            state.openAboutAndUpdates()
+                        } label: {
+                            HStack(spacing: 3) {
+                                if updater.hasUpdate {
+                                    Circle()
+                                        .fill(Theme.warning)
+                                        .frame(width: 5, height: 5)
+                                    Text("有更新")
+                                } else {
+                                    Text("v\(updater.currentVersion)")
+                                }
+                            }
+                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(updater.hasUpdate ? Theme.warning : Theme.accent)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .background(updater.hasUpdate ? Theme.warningSoft : Theme.accentSoft, in: Capsule())
                         }
+                        .buttonStyle(.plain)
+                        .help(updater.hasUpdate ? "发现新版本 v\(updater.latest?.version ?? "")，点击前往检查与安装" : "当前版本 v\(updater.currentVersion)，点击检查更新")
                     }
                     Text("长期记忆与决策伴侣")
                         .font(.system(size: 11))

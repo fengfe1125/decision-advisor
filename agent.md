@@ -1,7 +1,7 @@
 # Agent 开发者与维护指南 (`agent.md`)
 
 > **项目名称**：成长决策顾问（Decision Advisor）  
-> **当前版本**：`v0.13`  
+> **当前版本**：`v0.14`  
 > **核心定位**：Local-First 个人成长决策顾问与双时间轴长期记忆引擎（原生 macOS SwiftUI 客户端 + 内置/远程 VPS 双模 FastAPI 后端 + 4 路中文混合检索 + 官方 ChatGPT OAuth 订阅直连 & Remote MCP）
 
 本文档面向参与本项目的 AI Coding Agent 与开发者，详细梳理**后端架构设计、核心模块职责、数据库与 API 规范**以及**目前程序的整体现状与运维工作流**。
@@ -55,7 +55,9 @@ app/
 ├── db.py              # SQLite (advisor_state.db) 连接管理、会话/消息持久化、向量/FTS5/图谱表、OAuth 2.1 表
 ├── memory_store.py    # Markdown 记忆库读写、路径防穿越、四级隐私防火墙、<private> 剥离、三级写权限与 Diff
 ├── search_index.py    # 4 路中文混合检索引擎（BGE 向量 + 词法 CJK + 图谱 1-Hop + 双时间 as_of 与显著性）
-├── prompts.py         # 4 大对话模式指令（含 9 步反讨好决策协议）与半自动结构化记忆提案 Prompt/JSON 解析
+├── onboarding.py      # 核心自我 5 槽位完整度体检、3 分钟快速建档融合、槽位感知冷启动访谈引导
+├── memory_importer.py # 跨 Agent 记忆导入解析引擎（提示词粘贴、ChatGPT/Claude 导出 JSON/ZIP、Mem0/PAM/Letta JSON）
+├── prompts.py         # 4 大对话模式指令（含 9 步反讨好决策与槽位感知访谈）、对话/跨 Agent 导入提案 Prompt 与 JSON 解析
 ├── providers.py       # 多模型统一 HTTP/SSE 调用层（OpenAI Responses API / DeepSeek / OpenAI / Claude / Gemini）
 ├── chatgpt_oauth.py   # OpenAI 官方 Sign in with ChatGPT (OAuth 2.0 PKCE + 动态客户端注册 + 自动刷新 + 模型发现)
 ├── mcp_server.py      # 官方 ChatGPT Developer Mode 远程 MCP (Streamable HTTP POST /mcp + OAuth 2.1 PKCE)
@@ -164,6 +166,13 @@ app/
 | | `POST /api/chat/stream` | **核心 SSE 流式对话**，依次推送 `meta` → `reasoning` → `text` → `done` 事件 |
 | **半自动记忆提案** | `POST /api/proposals/extract` | 从最近 16 条对话中提炼结构化 Markdown 变更提案，自动计算写入级别 (`level` 1~3) 与 `diff` |
 | | `POST /api/proposals/commit` | 将用户勾选确认的提案落盘为 Markdown，自动生成外置 Git 快照并增量更新索引 |
+| **初始化引导与导入** | `GET /api/onboarding/status` | 体检 `00-核心自我/` 5 个核心槽位完整度与引导状态 |
+| | `POST /api/onboarding/state` | 更新引导状态（`completed` / `dismissed` / 重置）存入 SQLite `app_meta` |
+| | `POST /api/onboarding/quick-profile` | 3 分钟快速画像建档（支持仅预览 Diff 或非破坏性融合写入 + Git 快照） |
+| | `POST /api/onboarding/interview/start` | 顾问主动破冰开启槽位感知冷启动访谈（无 Key 时自动降级内置开场白） |
+| | `GET /api/import/prompts` | 获取内置可复制的跨平台记忆提取提示词（ChatGPT / Claude / Gemini / DeepSeek 通用） |
+| | `POST /api/import/preview` | 纯本地零额度解析粘贴文本、ChatGPT/Claude `.json`/`.zip`、Mem0/PAM/Letta JSON 并按个人相关性打分 |
+| | `POST /api/import/extract` | 对筛选片段脱敏后由 LLM 去重提炼为标准记忆提案，复用半自动 Diff 确认流 |
 | **记忆库、图谱与导出** | `GET /api/memories` | 按分类 (`category`)、关键词 (`q`)、情绪 (`emotion`)、最低显著度 (`min_importance`) 筛选记忆 |
 | | `GET /api/memories/search` | 4 路中文混合检索接口（支持 `q`、`top_k`、`as_of` 历史时间切片、`allow_sensitive`） |
 | | `GET /api/memories/timeline` | 获取按发生时间排序的人生章节、经历、决策与认知演进时间轴 |

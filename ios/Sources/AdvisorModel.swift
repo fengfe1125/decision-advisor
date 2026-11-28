@@ -109,6 +109,7 @@ final class AdvisorModel: ObservableObject {
     @Published private(set) var lastSync: Date?
     @Published private(set) var lastSyncFailure: String?
 
+    private var connectionID = UUID()
     private let monitor = NWPathMonitor()
     private var cachedMemories: [CachedMemory] = []
     private var streamErrors: [String: String] = [:]
@@ -118,7 +119,15 @@ final class AdvisorModel: ObservableObject {
     init() {
         server = savedServer
         password = AdvisorPassword.load(server: savedServer)
-        let snapshot = AdvisorStore.load()
+        let (snapshot, issue) = AdvisorStore.load()
+        switch issue {
+        case .quarantined(let fileName):
+            notice = "本机缓存无法解析，已另存为 \(fileName)，没有覆盖。未上传的内容可能需要重新录入。"
+        case .unreadable:
+            notice = "本机缓存暂时读不出来，本次不会写入手机，请重启 App。"
+        case nil:
+            break
+        }
         conversations = snapshot.conversations
         outbox = snapshot.outbox
         cachedMemories = snapshot.memories
@@ -173,10 +182,21 @@ final class AdvisorModel: ObservableObject {
         try AdvisorAPI(baseURL: AdvisorAPI.validateURL(server), password: password)
     }
 
-    private func persist() {
-        AdvisorStore.save(AdvisorSnapshot(
-            conversations: conversations, outbox: outbox, memories: cachedMemories, lastSync: lastSync
-        ))
+    @discardableResult
+    private func persist() -> Bool {
+        do {
+            try AdvisorStore.save(AdvisorSnapshot(
+                conversations: conversations, outbox: outbox, memories: cachedMemories, lastSync: lastSync
+            ))
+            return true
+        } catch {
+            self.error = "无法保存到手机：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    private func checkConnection(_ id: UUID) throws {
+        guard id == connectionID else { throw CancellationError() }
     }
 
     // MARK: - 连接
@@ -208,14 +228,23 @@ final class AdvisorModel: ObservableObject {
     /// 断开并清空本机缓存（包括还没上传的内容）。
     func disconnect() {
         guard !busy else { return }
-        stopReplying()
         AdvisorPassword.remove(server: server)
         password = ""
         connected = false
         eraseLocalData()
     }
 
+    private func invalidateConnection() {
+        connectionID = UUID()
+        stopReplying()
+        activeStreamTask = nil
+        streamErrors.removeAll()
+        syncing = false
+    }
+
     private func eraseLocalData() {
+        invalidateConnection()
+        memoryFile = nil
         conversations = []
         outbox = []
         memories = []
@@ -227,6 +256,7 @@ final class AdvisorModel: ObservableObject {
     }
 
     private func handleUnauthorized() {
+        invalidateConnection()
         AdvisorPassword.remove(server: server)
         password = ""
         connected = false
@@ -240,22 +270,28 @@ final class AdvisorModel: ObservableObject {
         guard connected, !syncing else { return }
         syncing = true
         lastSyncFailure = nil
-        defer { syncing = false }
+        let id = connectionID
+        defer { if id == connectionID { syncing = false } }
         do {
             let client = try api()
             repeat {
-                try await flushOutbox(client)
-                try await pullSessions(client)
+                try await flushOutbox(client, id: id)
+                try checkConnection(id)
+                try await pullSessions(client, id: id)
+                try checkConnection(id)
             } while outbox.contains { $0.failure == nil }
             lastSync = Date()
             lastSyncFailure = nil
             persist()
         } catch is CancellationError {
+            guard id == connectionID else { return }
             persist()
         } catch let failure as AdvisorAPI.APIError where failure.status == 401 {
+            guard id == connectionID else { return }
             handleUnauthorized()
         } catch {
             // 网络不可用或服务器暂时出错：内容留在队列里，同时记录原因以便界面提示重试。
+            guard id == connectionID else { return }
             if online {
                 lastSyncFailure = error.localizedDescription
             }
@@ -275,9 +311,10 @@ final class AdvisorModel: ObservableObject {
         return true
     }
 
-    private func flushOutbox(_ client: AdvisorAPI) async throws {
+    private func flushOutbox(_ client: AdvisorAPI, id: UUID) async throws {
         while let item = outbox.first(where: { $0.failure == nil }) {
             do {
+                try checkConnection(id)
                 switch item.kind {
                 case .chat(let conversationID, let messageID):
                     try await deliverChat(item, conversationID: conversationID, messageID: messageID, client: client)
@@ -285,6 +322,7 @@ final class AdvisorModel: ObservableObject {
                     let _: AdvisorAPI.SaveResult = try await client.request(
                         "api/inbox", method: "POST", body: ["text": text, "client_id": item.clientID]
                     )
+                    try checkConnection(id)
                     finish(item)
                 case .memory(let path, let content, let title):
                     let _: AdvisorAPI.SaveResult = try await client.request(
@@ -292,11 +330,13 @@ final class AdvisorModel: ObservableObject {
                         body: ["path": path, "content": content, "create_only": true,
                                "commit_message": "mobile: 手机新建记忆 \(title)"]
                     )
+                    try checkConnection(id)
                     finish(item)
                 }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
+                try checkConnection(id)
                 if Self.isTransient(error) { throw error }
                 fail(item, reason: error.localizedDescription)
             }
@@ -352,9 +392,10 @@ final class AdvisorModel: ObservableObject {
         activeStreamMetaReceived = false
 
         let bodyData = try JSONSerialization.data(withJSONObject: body)
+        let id = connectionID
         let streamTask = Task {
             try await client.stream("api/chat/stream", bodyData: bodyData) { [weak self] event in
-                guard let self else { return }
+                guard let self, self.connectionID == id else { return }
                 switch event.type {
                 case "meta":
                     self.activeStreamMetaReceived = true
@@ -372,14 +413,16 @@ final class AdvisorModel: ObservableObject {
             }
         }
         activeStreamTask = streamTask
-        defer { activeStreamTask = nil }
+        defer { if id == connectionID { activeStreamTask = nil } }
 
         do {
             try await streamTask.value
         } catch is CancellationError {
+            try checkConnection(id)
             handleCancelledStream(item: item, messageID: messageID, replyID: replyID)
             throw CancellationError()
         } catch {
+            try checkConnection(id)
             if streamTask.isCancelled || (error as? URLError)?.code == .cancelled {
                 handleCancelledStream(item: item, messageID: messageID, replyID: replyID)
                 throw CancellationError()
@@ -388,6 +431,7 @@ final class AdvisorModel: ObservableObject {
             throw error
         }
 
+        try checkConnection(id)
         if let streamError = streamErrors.removeValue(forKey: replyID) {
             removeReply(replyID)
             throw AdvisorAPI.APIError(errorDescription: streamError, status: 400)
@@ -467,10 +511,11 @@ final class AdvisorModel: ObservableObject {
         persist()
     }
 
-    private func pullSessions(_ client: AdvisorAPI) async throws {
+    private func pullSessions(_ client: AdvisorAPI, id: UUID) async throws {
         let response: AdvisorAPI.Items<AdvisorAPI.Session> = try await client.request(
             "api/sessions", query: [.init(name: "limit", value: "200")]
         )
+        try checkConnection(id)
         let busyIDs = Set(outbox.compactMap { item -> String? in
             if case .chat(let cid, _) = item.kind { return cid }
             return nil
@@ -489,12 +534,15 @@ final class AdvisorModel: ObservableObject {
         conversations = merged.sorted { Self.date($0.updatedAt) > Self.date($1.updatedAt) }
         if let activeID, conversations.first(where: { $0.id == activeID }) == nil { newConversation() }
         if let active, !active.loaded, !active.isLocal { try await loadMessages(active.id, client: client) }
+        try checkConnection(id)
         persist()
     }
 
     private func loadMessages(_ id: String, client: AdvisorAPI) async throws {
+        let connection = connectionID
         let detail: AdvisorAPI.Session = try await client.request("api/sessions/\(id)")
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        try checkConnection(connection)
         let unsent = conversations[index].messages.filter { $0.state != .sent }
         conversations[index].messages = (detail.messages ?? []).map {
             StoredMessage(
@@ -541,6 +589,8 @@ final class AdvisorModel: ObservableObject {
     func send() async {
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty, !isReplying else { return }
+        let previousConversations = conversations
+        let previousID = activeID
         if activeID == nil {
             let conversation = StoredConversation(
                 id: "local-\(UUID().uuidString)", title: String(content.prefix(40)),
@@ -560,8 +610,13 @@ final class AdvisorModel: ObservableObject {
             allowSensitive: allowSensitive ? true : nil,
             asOf: useAsOfDate ? formattedAsOf : nil
         ))
+        guard persist() else {
+            conversations = previousConversations
+            self.activeID = previousID
+            outbox.removeLast()
+            return
+        }
         draft = ""
-        persist()
         await sync()
     }
 
@@ -569,8 +624,11 @@ final class AdvisorModel: ObservableObject {
     func saveDraftToInbox() async {
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty else { return }
+        guard saveNote(content) else { return }
         draft = ""
-        await saveNote(content)
+        let id = connectionID
+        await sync()
+        guard id == connectionID else { return }
         if online && error == nil {
             notice = "已存入收件箱速记。"
         }
@@ -667,16 +725,15 @@ final class AdvisorModel: ObservableObject {
 
     // MARK: - 记忆库
 
-    func saveNote(_ text: String) async {
+    func saveNote(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        enqueue(.note(text: trimmed))
-        await sync()
+        guard !trimmed.isEmpty else { return false }
+        return enqueue(.note(text: trimmed))
     }
 
-    func createMemory(kind: MemoryKind, title: String, body: String, importance: Int, privacy: String) async {
+    func createMemory(kind: MemoryKind, title: String, body: String, importance: Int, privacy: String) -> Bool {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanTitle.isEmpty else { return }
+        guard !cleanTitle.isEmpty else { return false }
         let day = Date().formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
         let quotedTitle = String(decoding: (try? JSONEncoder().encode(cleanTitle)) ?? Data(), as: UTF8.self)
         let content = """
@@ -694,23 +751,28 @@ final class AdvisorModel: ObservableObject {
 
         \(body.trimmingCharacters(in: .whitespacesAndNewlines))
         """
-        enqueue(.memory(path: kind.path(title: cleanTitle, day: day), content: content, title: cleanTitle))
-        await sync()
+        return enqueue(.memory(path: kind.path(title: cleanTitle, day: day), content: content, title: cleanTitle))
     }
 
-    private func enqueue(_ kind: OutboxItem.Kind) {
+    private func enqueue(_ kind: OutboxItem.Kind) -> Bool {
         outbox.append(OutboxItem(clientID: UUID().uuidString, kind: kind, createdAt: Date()))
-        persist()
+        guard persist() else {
+            outbox.removeLast()
+            return false
+        }
         if !online { notice = "已存到手机，联网后会自动上传到 VPS。" }
+        return true
     }
 
     func findMemories(_ text: String) async {
+        let id = connectionID
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             let result: AdvisorAPI.Items<AdvisorAPI.Memory> = try await api().request(
                 query.isEmpty ? "api/memories" : "api/memories/search",
                 query: query.isEmpty ? [] : [.init(name: "q", value: query)]
             )
+            guard id == connectionID else { return }
             memories = result.items.map {
                 CachedMemory(path: $0.path, title: $0.title, categoryLabel: $0.categoryLabel, snippet: $0.snippet)
             }
@@ -719,8 +781,10 @@ final class AdvisorModel: ObservableObject {
                 persist()
             }
         } catch let failure as AdvisorAPI.APIError where failure.status == 401 {
+            guard id == connectionID else { return }
             handleUnauthorized()
         } catch {
+            guard id == connectionID else { return }
             memories = query.isEmpty ? cachedMemories : cachedMemories.filter {
                 $0.title.localizedCaseInsensitiveContains(query) || $0.snippet.localizedCaseInsensitiveContains(query)
             }

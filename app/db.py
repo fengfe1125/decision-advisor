@@ -160,8 +160,43 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 expires_at REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             """
         )
+
+
+# ---------- App Metadata Key-Value Helpers ----------
+
+
+def get_meta(key: str, default: str = "") -> str:
+    with get_conn() as conn:
+        row = conn.execute("SELECT value FROM app_meta WHERE key = ?", (key,)).fetchone()
+    return str(row["value"]) if row else default
+
+
+def set_meta(key: str, value: str) -> None:
+    now = _now_iso()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_meta (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (key, value, now),
+        )
+
+
+def delete_meta(key: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM app_meta WHERE key = ?", (key,))
 
 
 # ---------- Session & Message History Helpers ----------

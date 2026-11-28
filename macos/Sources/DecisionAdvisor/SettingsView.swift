@@ -140,12 +140,18 @@ struct SettingsView: View {
             if state.settingsPreferredTab == "backend" {
                 activeTab = .backend
                 state.settingsPreferredTab = "models"
+            } else if state.settingsPreferredTab == "about" {
+                activeTab = .about
+                state.settingsPreferredTab = "models"
             }
             if !loadedOnce { syncFromConfig() }
         }
         .onChange(of: state.settingsPreferredTab) { _, next in
             if next == "backend" {
                 activeTab = .backend
+                state.settingsPreferredTab = "models"
+            } else if next == "about" {
+                activeTab = .about
                 state.settingsPreferredTab = "models"
             }
         }

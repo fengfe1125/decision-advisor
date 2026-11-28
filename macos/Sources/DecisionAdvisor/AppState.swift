@@ -75,6 +75,18 @@ final class AppState {
     var showProposalSheet: Bool = false
     var isCommittingProposals: Bool = false
 
+    // Onboarding & Cross-Agent Memory Import
+    var onboardingStatus: OnboardingStatusDTO? = nil
+    var importPromptTemplates: [ImportPromptTemplateDTO] = []
+    var showOnboardingSheet: Bool = false
+    var onboardingInitialRoute: String = "hub" // "hub" | "quick" | "import"
+    var showImportSheet: Bool = false
+    var isSubmittingQuickProfile: Bool = false
+    var isStartingInterview: Bool = false
+    var isPreviewingImport: Bool = false
+    var isExtractingImport: Bool = false
+    private var hasAutoPromptedOnboarding: Bool = false
+
     // Memories / Search / Timeline / Graph
     var memoryViewMode: MemoryViewMode = .list
     var categories: [CategoryInfo] = []
@@ -131,10 +143,16 @@ final class AppState {
         selectSection(.settings)
     }
 
+    func openAboutAndUpdates() {
+        settingsPreferredTab = "about"
+        selectSection(.settings)
+    }
+
     func bootstrap() async {
         await refreshHealthAndConfig()
         await refreshSessions()
         await refreshMemories()
+        await refreshOnboardingStatus(autoPresent: true)
     }
 
     func saveRemoteConnection(url: String, token: String) async {
@@ -393,8 +411,155 @@ final class AppState {
             showBanner("已写入 \(res.written.count) 篇记忆并生成 Git 快照")
             await refreshHealthAndConfig()
             await refreshMemories()
+            await refreshOnboardingStatus(autoPresent: false)
         } catch {
             showBanner("写入失败：\(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Onboarding & Cross-Agent Memory Import
+
+    func refreshOnboardingStatus(autoPresent: Bool = false) async {
+        do {
+            let st = try await api.fetchOnboardingStatus()
+            self.onboardingStatus = st
+            if autoPresent && st.needsOnboarding && !hasAutoPromptedOnboarding {
+                hasAutoPromptedOnboarding = true
+                onboardingInitialRoute = "hub"
+                showOnboardingSheet = true
+            }
+        } catch {
+            // Keep silent if backend doesn't support onboarding yet or is offline
+        }
+    }
+
+    func openOnboardingWizard(route: String = "hub") {
+        onboardingInitialRoute = route
+        showOnboardingSheet = true
+        Task {
+            await refreshOnboardingStatus(autoPresent: false)
+            await ensureImportPromptsLoaded()
+        }
+    }
+
+    func openMemoryImportSheet() {
+        showImportSheet = true
+        Task {
+            await ensureImportPromptsLoaded()
+        }
+    }
+
+    func dismissOnboarding() async {
+        showOnboardingSheet = false
+        do {
+            let res = try await api.updateOnboardingState("dismissed")
+            self.onboardingStatus = res.status
+            showBanner("已暂跳过引导，随时可在欢迎页或「记忆库」菜单重新打开")
+        } catch {
+            // Still dismiss locally even if request fails
+        }
+    }
+
+    func submitQuickProfile(_ payload: QuickProfilePayload, commit: Bool) async -> Bool {
+        guard !isSubmittingQuickProfile else { return false }
+        isSubmittingQuickProfile = true
+        defer { isSubmittingQuickProfile = false }
+
+        var req = payload
+        req.commit = commit
+        do {
+            let res = try await api.submitQuickProfile(req)
+            self.onboardingStatus = res.status
+            if commit {
+                showOnboardingSheet = false
+                showBanner("✅ 已建立 \(res.written.count) 份核心自我档案并生成 Git 快照")
+                await refreshHealthAndConfig()
+                await refreshMemories()
+            } else {
+                self.proposals = res.proposals
+                showOnboardingSheet = false
+                showProposalSheet = true
+            }
+            return true
+        } catch {
+            showBanner("❌ 建档失败：\(error.localizedDescription)")
+            return false
+        }
+    }
+
+    func startGuidedInterview(focusSlot: String? = nil) async {
+        guard !isStartingInterview else { return }
+        isStartingInterview = true
+        defer { isStartingInterview = false }
+
+        do {
+            let res = try await api.startOnboardingInterview(
+                focusSlot: focusSlot,
+                providerId: selectedProviderId.isEmpty ? nil : selectedProviderId,
+                allowSensitive: allowSensitive
+            )
+            self.onboardingStatus = res.status
+            showOnboardingSheet = false
+            selectedSection = .chat
+            chatMode = .interview
+            await refreshSessions()
+            await openSession(res.sessionId)
+            if res.usedFallback {
+                showBanner("已开启冷启动访谈（配置大模型后即可继续对话）")
+            } else {
+                showBanner("已开启冷启动访谈，直接回复顾问的问题即可")
+            }
+        } catch {
+            showBanner("❌ 开启访谈失败：\(error.localizedDescription)")
+        }
+    }
+
+    func ensureImportPromptsLoaded() async {
+        if !importPromptTemplates.isEmpty { return }
+        do {
+            let res = try await api.fetchImportPrompts()
+            self.importPromptTemplates = res.templates
+        } catch {
+            // Use fallback templates inside UI if backend call fails
+        }
+    }
+
+    func previewAgentImport(rawText: String, files: [(name: String, data: Data)], sourceHint: String = "auto") async throws -> ImportPreviewResponse {
+        isPreviewingImport = true
+        defer { isPreviewingImport = false }
+        let encodedFiles: [[String: String]] = files.map { item in
+            [
+                "filename": item.name,
+                "content_base64": item.data.base64EncodedString(),
+            ]
+        }
+        return try await api.previewAgentImport(rawText: rawText, files: encodedFiles, sourceHint: sourceHint)
+    }
+
+    func extractAgentImport(items: [ImportChunkDTO], sourceLabel: String) async -> Bool {
+        guard !items.isEmpty, !isExtractingImport else { return false }
+        isExtractingImport = true
+        defer { isExtractingImport = false }
+        do {
+            let res = try await api.extractAgentImport(
+                items: items,
+                sourceLabel: sourceLabel,
+                providerId: selectedProviderId.isEmpty ? nil : selectedProviderId,
+                allowSensitive: allowSensitive
+            )
+            if res.proposals.isEmpty {
+                showBanner("未从所选内容中提炼出需要新增或更新的个人记忆")
+                return false
+            }
+            self.proposals = res.proposals
+            showOnboardingSheet = false
+            showImportSheet = false
+            showProposalSheet = true
+            showBanner("✅ 已提炼 \(res.proposals.count) 条记忆提案，请审阅 Diff 后确认写入")
+            return true
+        } catch {
+            showBanner("❌ 记忆提炼失败：\(error.localizedDescription)")
+            return false
         }
     }
 

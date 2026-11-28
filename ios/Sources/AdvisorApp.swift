@@ -17,6 +17,19 @@ struct AdvisorApp: App {
     }
 }
 
+private extension View {
+    /// 弹窗打开时，根视图上的提示框不会显示；每个弹窗也要挂一份，才能看到保存失败等错误。
+    func advisorErrorAlert(_ model: AdvisorModel) -> some View {
+        alert("请求未完成", isPresented: Binding(
+            get: { model.error != nil }, set: { if !$0 { model.error = nil } }
+        )) {
+            Button("好", role: .cancel) { model.error = nil }
+        } message: {
+            Text(model.error ?? "")
+        }
+    }
+}
+
 private struct AdvisorRoot: View {
     @ObservedObject var model: AdvisorModel
 
@@ -42,13 +55,7 @@ private struct AdvisorRoot: View {
         )) {
             if let file = model.memoryFile { MemoryDetail(model: model, file: file) }
         }
-        .alert("请求未完成", isPresented: Binding(
-            get: { model.error != nil }, set: { if !$0 { model.error = nil } }
-        )) {
-            Button("好", role: .cancel) { model.error = nil }
-        } message: {
-            Text(model.error ?? "")
-        }
+        .advisorErrorAlert(model)
         .alert("成长顾问", isPresented: Binding(
             get: { model.notice != nil }, set: { if !$0 { model.notice = nil } }
         )) {
@@ -984,14 +991,15 @@ private struct NoteEditor: View {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("保存") {
-                            let text = note
+                            guard model.saveNote(note) else { return }
                             dismiss()
-                            Task { await model.saveNote(text) }
+                            Task { await model.sync() }
                         }
                         .disabled(note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
         }
+        .advisorErrorAlert(model)
     }
 }
 
@@ -1035,19 +1043,18 @@ private struct MemoryEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
-                        let values = (kind, title, text, importance, privacy)
+                        guard model.createMemory(
+                            kind: kind, title: title, body: text,
+                            importance: importance, privacy: privacy
+                        ) else { return }
                         dismiss()
-                        Task {
-                            await model.createMemory(
-                                kind: values.0, title: values.1, body: values.2,
-                                importance: values.3, privacy: values.4
-                            )
-                        }
+                        Task { await model.sync() }
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
+        .advisorErrorAlert(model)
     }
 }
 
@@ -1101,6 +1108,7 @@ private struct MemoryDetail: View {
             }
             .interactiveDismissDisabled(editing)
         }
+        .advisorErrorAlert(model)
     }
 }
 

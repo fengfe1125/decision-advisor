@@ -471,6 +471,38 @@ private struct ChatInspectorPanel: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassCard(cornerRadius: 12)
+                } else if state.chatMode == .interview, let status = state.onboardingStatus {
+                    GlassSectionHeader(title: "核心档案槽位", trailing: "\(status.completeness)%")
+                        .padding(.top, 8)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(status.slots) { slot in
+                            Button {
+                                Task { await state.startGuidedInterview(focusSlot: slot.id) }
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: slot.status == "ready" ? "checkmark.circle.fill" : (slot.status == "partial" ? "circle.lefthalf.filled" : "circle.dashed"))
+                                        .font(.system(size: 12.5))
+                                        .foregroundStyle(slot.status == "ready" ? Theme.success : (slot.status == "partial" ? Theme.warning : Theme.textTertiary))
+                                        .padding(.top, 1)
+                                    VStack(alignment: .leading, spacing: 1.5) {
+                                        Text(slot.title)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Theme.textPrimary)
+                                        Text(slot.status == "ready" ? "已建立 · 点击可继续深化" : slot.description)
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(Theme.textTertiary)
+                                            .lineLimit(2)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassCard(cornerRadius: 12)
                 } else {
                     GlassSectionHeader(title: "当前模式")
                         .padding(.top, 8)
@@ -684,7 +716,7 @@ private struct WelcomeHeroView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 30) {
+        VStack(spacing: 22) {
             VStack(spacing: 14) {
                 CompassEmblem(size: 64)
                     .shadow(color: Theme.accent.opacity(0.25), radius: 16, y: 8)
@@ -710,6 +742,33 @@ private struct WelcomeHeroView: View {
                 }
             }
 
+            if let status = state.onboardingStatus {
+                VStack(alignment: .leading, spacing: 10) {
+                    CoreSelfProgressBanner(status: status) { slot in
+                        Task { await state.startGuidedInterview(focusSlot: slot.id) }
+                    }
+
+                    HStack(spacing: 8) {
+                        Button {
+                            state.openOnboardingWizard(route: "hub")
+                        } label: {
+                            Label(status.completeness < 60 ? "打开「认识我」初始化向导" : "完善个人画像", systemImage: "person.crop.circle.badge.plus")
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle(compact: true, isActive: status.completeness < 60))
+
+                        Button {
+                            state.openMemoryImportSheet()
+                        } label: {
+                            Label("导入其他 Agent 记忆", systemImage: "square.and.arrow.down.on.square")
+                        }
+                        .buttonStyle(SubtleOutlineButtonStyle(compact: true))
+
+                        Spacer()
+                    }
+                }
+                .frame(maxWidth: 680)
+            }
+
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                 ForEach(starters) { item in
                     StarterCard(
@@ -718,7 +777,11 @@ private struct WelcomeHeroView: View {
                         subtitle: item.subtitle,
                         modeLabel: item.mode.label
                     ) {
-                        onSelectStarter(item.mode, item.prompt)
+                        if item.mode == .interview {
+                            Task { await state.startGuidedInterview(focusSlot: nil) }
+                        } else {
+                            onSelectStarter(item.mode, item.prompt)
+                        }
                     }
                 }
             }

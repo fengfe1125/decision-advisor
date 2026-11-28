@@ -69,13 +69,13 @@ final class APIClient: Sendable {
         return ""
     }
 
-    private func makeRequest(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
+    private func makeRequest(_ path: String, method: String = "GET", body: Data? = nil, timeout: TimeInterval = 120) throws -> URLRequest {
         guard let url = URL(string: "\(baseURL)\(path)") else {
             throw APIError.invalidURL
         }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.timeoutInterval = 120
+        req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if !accessToken.isEmpty {
             req.setValue(accessToken, forHTTPHeaderField: "X-Access-Token")
@@ -84,8 +84,8 @@ final class APIClient: Sendable {
         return req
     }
 
-    private func perform<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil) async throws -> T {
-        let req = try makeRequest(path, method: method, body: body)
+    private func perform<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil, timeout: TimeInterval = 120) async throws -> T {
+        let req = try makeRequest(path, method: method, body: body, timeout: timeout)
         let data: Data
         let response: URLResponse
         do {
@@ -293,6 +293,64 @@ final class APIClient: Sendable {
         if let sid = sessionId { obj["session_id"] = sid }
         let data = try JSONSerialization.data(withJSONObject: obj)
         return try await perform("/api/proposals/commit", method: "POST", body: data)
+    }
+
+    // MARK: - Onboarding & Cross-Agent Memory Import
+
+    func fetchOnboardingStatus() async throws -> OnboardingStatusDTO {
+        try await perform("/api/onboarding/status")
+    }
+
+    func updateOnboardingState(_ state: String) async throws -> OnboardingStateResponse {
+        let data = try JSONSerialization.data(withJSONObject: ["state": state])
+        return try await perform("/api/onboarding/state", method: "POST", body: data)
+    }
+
+    func submitQuickProfile(_ payload: QuickProfilePayload) async throws -> QuickProfileResponse {
+        let data = try JSONEncoder().encode(payload)
+        return try await perform("/api/onboarding/quick-profile", method: "POST", body: data)
+    }
+
+    func startOnboardingInterview(focusSlot: String?, providerId: String?, allowSensitive: Bool) async throws -> InterviewStartResponse {
+        var obj: [String: Any] = ["allow_sensitive": allowSensitive]
+        if let slot = focusSlot, !slot.isEmpty { obj["focus_slot"] = slot }
+        if let pid = providerId, !pid.isEmpty { obj["provider_id"] = pid }
+        let data = try JSONSerialization.data(withJSONObject: obj)
+        return try await perform("/api/onboarding/interview/start", method: "POST", body: data, timeout: 60)
+    }
+
+    func fetchImportPrompts() async throws -> ImportPromptsResponse {
+        try await perform("/api/import/prompts")
+    }
+
+    func previewAgentImport(rawText: String, files: [[String: String]], sourceHint: String = "auto") async throws -> ImportPreviewResponse {
+        let obj: [String: Any] = [
+            "raw_text": rawText,
+            "files": files,
+            "source_hint": sourceHint,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: obj)
+        return try await perform("/api/import/preview", method: "POST", body: data, timeout: 90)
+    }
+
+    func extractAgentImport(items: [ImportChunkDTO], sourceLabel: String, providerId: String?, allowSensitive: Bool) async throws -> ImportExtractResponse {
+        var obj: [String: Any] = [
+            "source_label": sourceLabel,
+            "allow_sensitive": allowSensitive,
+            "items": items.map {
+                [
+                    "id": $0.id,
+                    "source_type": $0.sourceType,
+                    "source_label": $0.sourceLabel,
+                    "title": $0.title,
+                    "date": $0.date,
+                    "content": $0.content,
+                ]
+            },
+        ]
+        if let pid = providerId, !pid.isEmpty { obj["provider_id"] = pid }
+        let data = try JSONSerialization.data(withJSONObject: obj)
+        return try await perform("/api/import/extract", method: "POST", body: data, timeout: 180)
     }
 
     // MARK: - SSE Streaming Chat

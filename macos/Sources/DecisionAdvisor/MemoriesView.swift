@@ -24,6 +24,17 @@ struct MemoriesView: View {
                         .onChange(of: state.memoryViewMode) { _, _ in
                             Task { await state.refreshMemories() }
                         }
+
+                        Button {
+                            state.openMemoryImportSheet()
+                        } label: {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.system(size: 13))
+                        }
+                        .buttonStyle(GhostIconButtonStyle(size: 30))
+                        .padding(2)
+                        .glassCapsule()
+                        .help("导入其他 Agent 记忆（ChatGPT / Claude / 通用 JSON）")
                     }
                     .padding(.horizontal, 12)
                 }
